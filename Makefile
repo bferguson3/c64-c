@@ -9,9 +9,8 @@ RUN=1
 
 default:
 	rm -rf disk.d64
-	$(CC) --target c64 -I$(INCLUDES) $(PROJECT)/main.c -o build/main.s 	# Rel
-	$(CL) --listing build/main.lst build/main.s   		# Lst
-	$(CL) --target c64 -I$(INCLUDES) $(PROJECT)/main.c -o build/$(APPNAME) 
+	$(CL) -v --target c64 -C c64ben.cfg -I$(INCLUDES) -l build/main.lst \
+		-m build/main.map $(PROJECT)/main.c -o build/$(APPNAME) 
 	mkd64 -m cbmdos -g -o disk.d64 -f build/$(APPNAME) \
 		-n $(APPNAME) -w > mkd64_out.txt
 	$(EMU) disk.d64 > emulator_out.txt

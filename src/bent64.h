@@ -1,6 +1,13 @@
 #ifndef BENT64
 #define BENT64
 
+// Memory map:
+// Entry ~ $800
+// Text screen default location, $400
+// stack at $cfff (memory top) and grows downward.
+//  Kernel requires e0-ff.
+// C heap is at the end of program data (so allot some space.)
+
 //
 typedef unsigned char u8;
 typedef signed char bool;
@@ -15,6 +22,10 @@ void save2file(u8 nam[8], \
 			   u8* data_end, \
 			   u8 drive, \
 			   u8 f_no);
+void SetSpritePosition(u8 sprNo, u8 x, u8 y);
+
+static unsigned char globalSubA, globalSubB;
+static unsigned int globalSubC, globalSubD;
 
 //
 #define BLACK 0
@@ -57,8 +68,40 @@ void save2file(u8 nam[8], \
 
 #define DRIVE1 8
 
-static unsigned char globalSubA, globalSubB;
-static unsigned int globalSubC, globalSubD;
+#define ENABLE_KERNEL() asm("lda #$36 \
+							 sta $0001 ");
+#define k_CLS() asm("jsr $e544");	
+#define ENABLE_SPRITES(n) asm("lda #%b", (u8)n); \
+					  	  asm("sta $d015 ");
+#define SET_SPRITEPTR(n, p) asm("lda #%b", (u8)p); \
+						   asm("sta %w", 0x7f8 + n);
+#define SET_MCSPRITES(n) asm("lda #%b", (u8)n); \
+						 asm("sta $d01c");
+// Colors for quickness						 
+#define SPRITECOLOR_0(n) asm("lda #%b", (u8)n); \
+						 asm("sta $d027");
+#define SPRITECOLOR_1(n) asm("lda #%b", (u8)n); \
+						 asm("sta $d028");
+#define SPRITECOLOR_2(n) asm("lda #%b", (u8)n); \
+						 asm("sta $d029");
+#define SPRITECOLOR_3(n) asm("lda #%b", (u8)n); \
+						 asm("sta $d02a");
+#define SPRITECOLOR_4(n) asm("lda #%b", (u8)n); \
+						 asm("sta $d02b");
+#define SPRITECOLOR_5(n) asm("lda #%b", (u8)n); \
+						 asm("sta $d02c");
+#define SPRITECOLOR_6(n) asm("lda #%b", (u8)n); \
+						 asm("sta $d02d");
+#define SPRITECOLOR_7(n) asm("lda #%b", (u8)n); \
+						 asm("sta $d02e");
+
+void SetSpritePosition(u8 sprNo, u8 x, u8 y)
+{
+	u8* yl;
+	yl = (u8*)(0xd000 + (sprNo * 2));
+	*yl++ = y;
+	*yl = x;
+}
 
 static u8 g_charsetMode; 
 
@@ -103,10 +146,11 @@ void WaitVBLANK()
 // MUST BE LOWERCASE
 static u8 fname[] = "@0:filetest,s,w";
 // Disk vars
-const u8 a[] = "Writing to disk. Please wait...";
+//const u8 a[] = "Writing to disk. Please wait...";
 const u8 file_error[] = "Error opening file.";
 const u8 write_error[] = "Write error!";
 static u8 _errcode;
+
 void save2file(u8 nam[8], 
 			u8 ftype, 
 			u8* data_start, 

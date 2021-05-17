@@ -1,5 +1,0 @@
-Initializing chip model "MOS8565" (63 cycles per line, 312 raster lines).
-VSP Bug: safe channels are: 023. Emulation of memory corruption is disabled.
-VSP Bug: safe channels are: 01236. Emulation of memory corruption is disabled.
-Reading configuration file `/home/pi/.config/vice/sdl-vicerc'.
-
