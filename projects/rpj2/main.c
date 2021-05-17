@@ -9,29 +9,27 @@
 
 #include "bent64.h"
 
-// C64 uses oddball char map, need to adjust from ascii
-const u8 a[] = "Hello World!";
+const u8 DATASTART[] = "ASDFASDF";
 
-void WaitVBLANK()
-{
-	_vbla:	
-	asm("lda $d011\n\
-		and #$80\n\
-		beq %g",_vbla);
-	_vblb:
-	asm("lda $d011\n\
-		and #$80\n\
-		bne %g", _vblb);
-}
+
+
 
 void main()
 {
+	u8 i;
+	// Enable kernel @ $e0-$ff
+	asm("lda #%b", 0b00110110);
+	asm("sta $0001");
+
 	CHARSET_B()	
-	print(&a);
+	print(&a, sizeof(a)-1, 0, 0, LIGHTGREY);
 	
-	while(1)
-	{
-		WaitVBLANK();
-		asm("inc $d020");
-	}
+	save2file("data    ", 's', &DATASTART, &DATASTART + 8, DRIVE1, 2);
+	
+	WaitVBLANK();
+	asm("inc $d020");
+	
+	// to draw a tile
+	// 
+
 }

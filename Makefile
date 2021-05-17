@@ -5,6 +5,7 @@ EMU=x64sc
 APPNAME=main
 PROJECT=projects/rpj2
 INCLUDES=src
+RUN=1
 
 default:
 	rm -rf disk.d64
