@@ -1,0 +1,6 @@
+-m cbmdos -g 
+-m separators -g 
+-M diskfiles.txt 
+-o disk.d64 
+-f build/main -n main -w 
+-f blank -p line -w

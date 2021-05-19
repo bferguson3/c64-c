@@ -5,16 +5,32 @@ EMU=x64sc
 APPNAME=main
 PROJECT=projects/rpj2
 INCLUDES=src
-RUN=1
+RUN=$(EMU) disk.d64 > emulator_out.txt
+DATAFILE=.
 
 default:
+	mkdir -p $(PROJECT)/diskfiles
+	mkdir -p build
 	rm -rf disk.d64
-	$(CL) -v --target c64 -C c64ben.cfg -I$(INCLUDES) -l build/main.lst \
-		-m build/main.map $(PROJECT)/main.c -o build/$(APPNAME) 
-	mkd64 -m cbmdos -g -o disk.d64 -f build/$(APPNAME) \
-		-n $(APPNAME) -w > mkd64_out.txt
-	$(EMU) disk.d64 > emulator_out.txt
+	$(CL) -v --target c64 \
+		  -C c64app.cfg \
+		  -I$(INCLUDES) \
+		  -l build/main.lst \
+		  -m build/main.map \
+		  $(PROJECT)/main.c -o build/$(APPNAME) 
+	python3 tools/makedcfg.py $(PROJECT) $(APPNAME)
+	mkd64 -C $(PROJECT)/makedisk > mkd64_out.txt
+	$(RUN)
+
+binary:
+	$(CL) -v \
+		-C datafile.cfg \
+		$(DATAFILE)
 
 clean:
-	rm -rf build/*
+	rm -rf build
 	rm -rf disk.d64
+	rm -rf diskfiles.txt 
+	rm -rf emulator_out.txt 
+	rm -rf mkd64_out.txt 
+	
