@@ -19,11 +19,11 @@ typedef signed int s16;
 void print(const u8* a, u8 len, u8 x, u8 y, u8 color);
 void WaitVBLANK();
 void save2file(u8 nam[8], \
-			   u8 ftype, \
-			   u8* data_start, \
-			   u8* data_end, \
-			   u8 drive, \
-			   u8 f_no);
+		u8 ftype, \
+		u8* data_start, \
+		u8* data_end, \
+		u8 drive, \
+		u8 f_no);
 void SetSpritePosition(u8 sprNo, u16 x, u8 y);
 void SetSpritePointer(u8 sprNo, u8 ptr);
 void LoadSectorFromDisk(u8 trackNo, u8 secNo, u8* tgt);
@@ -104,42 +104,57 @@ static unsigned int globalSubC, globalSubD;
 #define DRIVE1 8
 
 #define ENABLE_KERNEL() asm("lda #$36 \
-							 sta $0001 ");
+			sta $0001 ");
 #define k_CLS() asm("jsr $e544");	
 #define ENABLE_SPRITES(n) asm("lda #%b", (u8)n); \
-					  	  asm("sta $d015 ");
+			asm("sta $d015 ");	
 
 #define SET_MCSPRITES(n) asm("lda #%b", (u8)n); \
-						 asm("sta $d01c");
+			asm("sta $d01c");
 // Colors for quickness						 
 #define SPRITECOLOR_0(n) asm("lda #%b", (u8)n); \
-						 asm("sta $d027");
+			asm("sta $d027");
 #define SPRITECOLOR_1(n) asm("lda #%b", (u8)n); \
-						 asm("sta $d028");
+			asm("sta $d028");
 #define SPRITECOLOR_2(n) asm("lda #%b", (u8)n); \
-						 asm("sta $d029");
+			asm("sta $d029");
 #define SPRITECOLOR_3(n) asm("lda #%b", (u8)n); \
-						 asm("sta $d02a");
+			asm("sta $d02a");
 #define SPRITECOLOR_4(n) asm("lda #%b", (u8)n); \
-						 asm("sta $d02b");
+			asm("sta $d02b");
 #define SPRITECOLOR_5(n) asm("lda #%b", (u8)n); \
-						 asm("sta $d02c");
+			asm("sta $d02c");
 #define SPRITECOLOR_6(n) asm("lda #%b", (u8)n); \
-						 asm("sta $d02d");
+			asm("sta $d02d");
 #define SPRITECOLOR_7(n) asm("lda #%b", (u8)n); \
-						 asm("sta $d02e");
-
+			asm("sta $d02e");
+			
+static u8 JOY1_STATE = 0;
+static u8 JOY2_STATE = 0;
+#define POLL_INPUT() asm("lda $dc00 \
+		and #$1f \
+		eor #$1f \
+		sta %v", JOY2_STATE); \
+		asm("lda $dc01 \
+		and #$1f \
+		eor #$1f \
+		sta %v", JOY1_STATE);
+#define JOYUP (1)
+#define JOYDOWN (1<<1)
+#define JOYLEFT (1<<2)
+#define JOYRIGHT (1<<3)
+#define JOYBTN (1<<4)
 
 void WaitVBLANK()
 {
 	_vbla:	
 	asm("lda $d011\n\
-		and #$80\n\
-		beq %g",_vbla);
+	and #$80\n\
+	beq %g",_vbla);
 	_vblb:
 	asm("lda $d011\n\
-		and #$80\n\
-		bne %g", _vblb);
+	and #$80\n\
+	bne %g", _vblb);
 }
 
 void SetSpritePointer(u8 sprNo, u8 ptr)
@@ -227,11 +242,11 @@ const u8 write_error[] = "Write error!";
 static u8 _errcode;
 
 void save2file(u8 nam[8], 
-			u8 ftype, 
-			u8* data_start, 
-			u8* data_end, 
-			u8 drive, 
-			u8 f_no) 
+		u8 ftype, 
+		u8* data_start, 
+		u8* data_end, 
+		u8 drive, 
+		u8 f_no) 
 {
 	u8 c;
 	// set filename and file type
@@ -336,45 +351,45 @@ void LoadSectorFromDisk(u8 trackNo, u8 secNo, u8* tgt)
 	uname[11] = dec[2];
 	asm("sei");
 	asm("lda #1 \
-		 ldx #<%v", cname);
+		ldx #<%v", cname);
 	asm("ldy #>%v", cname); // SETNAM open input: 2,8,2
 	asm("jsr $ffbd \
-		 lda #2 \
-		 ldx #8 \
-		 ldy #2 \
-		 jsr $ffba \
-		 jsr $ffc0 \
-		 bcs %g", LDERROR); // fail catch
+		lda #2 \
+		ldx #8 \
+		ldy #2 \
+		jsr $ffba \
+		jsr $ffc0 \
+		bcs %g", LDERROR); // fail catch
 	asm("lda #12");
 	asm("ldx #<%v", uname); 
 	asm("ldy #>%v", uname); //OPEN the disk on file 15
 	asm("jsr $ffbd \
-		 lda #15 \
-		 ldx $ba \
-		 ldy #15 \
-		 jsr $ffba \
-		 jsr $ffc0 \
-		 bcs %g", LDERROR); // fail catch
+		lda #15 \
+		ldx $ba \
+		ldy #15 \
+		jsr $ffba \
+		jsr $ffc0 \
+		bcs %g", LDERROR); // fail catch
 	globalSubA = (u16)tgt >> 8;
 	globalSubB = (u16)tgt & 0xff;
 	asm("ldx #2 \
-		 jsr $ffc6 \
-		 lda %v", globalSubB); //chkin file 2 for writing
+		jsr $ffc6 \
+		lda %v", globalSubB); //chkin file 2 for writing
 	asm("sta $ae \
-		 lda %v", globalSubA); // ram write addr
+		lda %v", globalSubA); // ram write addr
 	asm("sta $af \
-		 ldy #0");
+		ldy #0");
 	RDLOOP:
 	asm("jsr $ffcf \
-		 sta ($ae),y \
-		 iny \
-		 bne %g", RDLOOP);
+		sta ($ae),y \
+		iny \
+		bne %g", RDLOOP);
 	CLOSEFL:				// close both 2 and 15
 	asm("lda #15 \
-		 jsr $ffc3 \
-		 lda #2 \
-		 jsr $ffc3 \
-		 jsr $ffcc"); // clear channels
+		jsr $ffc3 \
+		lda #2 \
+		jsr $ffc3 \
+		jsr $ffcc"); // clear channels
 	asm("cli");
 	return;
 	LDERROR:
