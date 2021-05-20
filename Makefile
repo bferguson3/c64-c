@@ -17,6 +17,7 @@ default:
 		  -I$(INCLUDES) \
 		  -l build/main.lst \
 		  -m build/main.map \
+		  -Os \
 		  $(PROJECT)/main.c -o build/$(APPNAME) 
 	python3 tools/makedcfg.py $(PROJECT) $(APPNAME)
 	mkd64 -C $(PROJECT)/makedisk > mkd64_out.txt

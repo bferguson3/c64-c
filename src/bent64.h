@@ -152,8 +152,8 @@ void WaitVBLANK()
 	and #$80\n\
 	beq %g",_vbla);
 	_vblb:
-	asm("lda $d011\n\
-	and #$80\n\
+	asm("lda $d012\n\
+	cmp #0\n\
 	bne %g", _vblb);
 }
 

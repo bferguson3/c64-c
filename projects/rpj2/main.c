@@ -24,10 +24,39 @@ static s8 spa_o = 0;
 u8 p_anm_frames[] = { 0, 1, 2, 3, 4, 3 };
 u8 p_jump_pos[] = { 13, 24, 33, 40, 47, 52, 56, 60, 62 };
 
+void vblirq()
+{
+	
+	asm("pha \
+	txa \
+	pha \
+	tya \
+	pha");
+	asm("dec $d021");
+	asm("pla \
+	tay \
+	pla \
+	tax \
+	pla \
+	rti");
+	
+}
+
 void main()
 {
 	u8 i;
 	u8 pw;
+	globalSubA = (u16)(&vblirq) >> 4;
+	globalSubB = (u16)(&vblirq) & 0xf;
+	//318/319
+	asm("lda #50");
+	//asm("sta $d011");
+	asm("sta $d012");
+	asm("lda %v", globalSubB);
+	asm("sta $0314");
+	asm("lda %v", globalSubA);
+	asm("sta $0315");
+	
 	timer_a = 0;
 	timer_j = 0;
 	p_frame = 0;
@@ -63,13 +92,19 @@ void main()
 	
 	while(1) 
 	{
+		//asm("lda #1 \
+		//sta $d020");
 		POLL_INPUT();
 
 		UpdatePlayerState();
 	
 		// DRAW ONLY CODE NOW!
+		//asm("lda #0 \
+		//sta $d020");
 		WaitVBLANK();
-
+		//asm("lda #2 \
+		//sta $d020");
+		
 		// Set player sprites 0 and 1 position + frame
 		SetSpritePosition(0, player_x + spa_o, \
 			180 - p_jump_pos[timer_j]);
@@ -86,7 +121,9 @@ void main()
 			SetSpritePointer(1, 138 + 4 + f_o);
 		}
 		// flash screen if button pressed
-		if(JOY1_STATE & JOYBTN) asm("inc $d020");
+		//if(JOY1_STATE & JOYBTN) asm("inc $d020");
+		asm("lda #0 \
+		sta $d020");
 		
 		// end of main loop
 	}
