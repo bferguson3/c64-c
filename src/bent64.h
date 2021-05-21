@@ -28,6 +28,7 @@ void SetSpritePosition(u8 sprNo, u16 x, u8 y);
 void SetSpritePointer(u8 sprNo, u8 ptr);
 void LoadSectorFromDisk(u8 trackNo, u8 secNo, u8* tgt);
 void byteToString(u8 byte, u8* arr);
+void setup_irq(void* interrupt, u8 scanline);
 
 static unsigned char globalSubA, globalSubB;
 static unsigned int globalSubC, globalSubD;
@@ -49,6 +50,13 @@ static unsigned int globalSubC, globalSubD;
 #define LIGHTGREEN 13
 #define LIGHTBLUE 14
 #define LIGHTGREY 15
+
+#define TRUE 1
+#define FALSE 0
+#define True TRUE 
+#define true True 
+#define False FALSE 
+#define false False 
 
 #define COLORRAM (volatile u8*)(0xd800)
 #define SCREENRAM (volatile u8*)(0x400)
@@ -106,11 +114,18 @@ static unsigned int globalSubC, globalSubD;
 #define ENABLE_KERNEL() asm("lda #$36 \
 			sta $0001 ");
 #define k_CLS() asm("jsr $e544");	
+#define return_irq asm("asl $d019 \
+			jmp $ea81");
 #define ENABLE_SPRITES(n) asm("lda #%b", (u8)n); \
 			asm("sta $d015 ");	
-
 #define SET_MCSPRITES(n) asm("lda #%b", (u8)n); \
 			asm("sta $d01c");
+
+static u8 globalSubE;
+#define SETBORDER(n) globalSubE = n; \
+	asm("lda %v", globalSubE); \
+	asm("sta $d020");
+
 // Colors for quickness						 
 #define SPRITECOLOR_0(n) asm("lda #%b", (u8)n); \
 			asm("sta $d027");
@@ -144,6 +159,32 @@ static u8 JOY2_STATE = 0;
 #define JOYLEFT (1<<2)
 #define JOYRIGHT (1<<3)
 #define JOYBTN (1<<4)
+
+
+void setup_irq(void* interrupt, u8 scanline)
+{
+	globalSubA = (u16)(interrupt) >> 8;
+	globalSubB = (u16)(interrupt) & 0xff;
+	asm("sei"); // disable irq flag
+	asm("lda %v", globalSubB);
+	asm("sta $0314");
+	asm("lda %v", globalSubA);
+	asm("sta $0315"); // vblank function location
+	asm("lda #$7f \
+	sta $dc0d \
+	sta $dd0d \
+	lda #$81 \
+	sta $d01a"); // turn off timers and set raster irqs
+	asm("lda #$1b \
+	sta $d011 ");//<- screen control
+	globalSubC = scanline;
+	asm("lda %v", globalSubC);
+	asm("sta $d012"); // IRQ raster loc
+	asm("lda $dc0d \
+	lda $dd0d \
+	asl $d019"); // clear cia flags and irq flag
+	asm("cli");
+}
 
 void WaitVBLANK()
 {
