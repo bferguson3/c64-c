@@ -1,0 +1,7 @@
+-m cbmdos -g 
+-m separators -g 
+-M diskfiles.txt 
+-o disk.d64 
+-f build/main.exo -n main.exo -w 
+-f projects/sidplay/diskfiles/out.sid -n out.sid -i 1 -w 
+-p line -w

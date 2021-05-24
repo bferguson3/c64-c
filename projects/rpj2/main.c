@@ -82,7 +82,6 @@ void main()
 	SetSpritePosition(1, 90, 90);
 	SPRITECOLOR_1(RED);
 
-	//asm("inc $d020");
 	// Set: Only 'safe' kb keys as readable, support joy 1 + 2.
 	// JOY1 <-> KB (either or)
 	// JOY2 (doesn't matter)
@@ -91,7 +90,7 @@ void main()
 	lda #0 \
 	sta $dc03 ");
 	
-	setup_irq(&vblirq, 252);
+	setup_irq(&vblirq, 1);
 
 	while(1) 
 	{
@@ -102,6 +101,7 @@ void main()
 		POLL_INPUT();
 		UpdatePlayerState();
 		  SETBORDER(BLACK);
+		
 	}
 	// end of main()
 }

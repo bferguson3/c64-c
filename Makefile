@@ -18,8 +18,10 @@ default:
 		  -l build/main.lst \
 		  -m build/main.map \
 		  -Ors \
-		  $(PROJECT)/main.c -o build/$(APPNAME) 
-	python3 tools/makedcfg.py $(PROJECT) $(APPNAME)
+		  $(PROJECT)/main.c -o build/$(APPNAME)
+	~/Projects/exomizer/src/exomizer sfx sys -c -t 64 \
+		-o build/main.exo build/main  
+	python3 tools/makedcfg.py $(PROJECT) $(APPNAME).exo
 	mkd64 -C $(PROJECT)/makedisk > mkd64_out.txt
 	$(RUN)
 

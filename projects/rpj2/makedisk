@@ -3,5 +3,5 @@
 -M diskfiles.txt 
 -o disk.d64 
 -f build/main -n main -w 
--f projects/rpj2/diskfiles/scr1 -n scr1 -w 
+-f projects/rpj2//diskfiles/scr1 -n scr1 -i 1 -w 
 -f blank -p line -w

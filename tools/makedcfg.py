@@ -7,9 +7,9 @@ out = pa
 fs = os.listdir(sys.argv[1] + '/diskfiles')
 i = 0
 while i < len(fs):
-	out += '-f '+ sys.argv[1] +'/diskfiles/' + fs[i] +' -n ' + fs[i] + ' -w \n'
+	out += '-f '+ sys.argv[1] +'/diskfiles/' + fs[i] +' -n ' + fs[i] + ' -i 1 -w \n'
 	i += 1
-out += "-f blank -p line -w\n"
+out += "-p line -w\n"
 f = open(sys.argv[1] + '/makedisk', 'w')
 f.write(out)
 f.close()
