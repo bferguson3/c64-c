@@ -2,6 +2,6 @@
 -m separators -g 
 -M diskfiles.txt 
 -o disk.d64 
--f build/main -n main -w 
--f projects/rpj2//diskfiles/scr1 -n scr1 -i 1 -w 
--f blank -p line -w
+-f build/main.exo -n main.exo -w 
+-f projects/rpj2/diskfiles/scr1 -n scr1 -i 1 -w 
+-p line -w

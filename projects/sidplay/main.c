@@ -28,17 +28,18 @@ void main()
         // 17,1 taken from diskfiles.txt
         // Default sector interleave is 10 we used 1.
         dl = &disk_buffer[0];//(u8*)0x8000-2-0x7c+6; // f88
-        LoadSectorFromDisk(17, 1, dl);
+        //void LoadSectorFromDisk(u8 trackNo, u8 secNo, u8* tgt);
+        LoadSectorFromDisk(1, 0, dl);
         dl = dl + 0x7c + 4; // discard sector header and SID header
         for(i = 0; i < 254 - 0x7c - 2; i++) //254 = sector size without header
         {
                 *cl++ = *dl++;
         }
         // Standard load looks like this:
-        for(c = 2; c < 10; c++)
+        for(c = 1; c < 7; c++) // c+=1 is interleave of 1
         {
                 dl = &disk_buffer[0];
-                LoadSectorFromDisk(17, c, dl);
+                LoadSectorFromDisk(1, c, dl);
                 dl += 2; // discard sector header
                 for(i = 0; i < 254; i++)
                 {
