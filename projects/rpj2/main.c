@@ -6,9 +6,10 @@
 //
 void UpdatePlayerState();
 void vblirq();
-
+void LoadDiskFile(u8 n_tr, u8 n_sec, u8* dest);
+static u8 disk_buffer[256];
 //
-const u8 teststr[] = "Display sprite test";
+const u8 teststr[] = "loading";
 
 enum pstate { standing, starting, running, jumping, falling };
 enum pstate playerState;
@@ -24,15 +25,28 @@ static u8 f_o;
 static s8 spa_o = 0;
 u8 p_anm_frames[] = { 0, 1, 2, 3, 4, 3 };
 u8 p_jump_pos[] = { 13, 24, 33, 40, 47, 52, 56, 60, 62 };
+//u8 last_tr;
+
+static u8 mapbuffer[2000];
 
 bool frameFinished = false;
 
 void vblirq()
 {
+	asm("pha \
+	txa \
+	pha \
+	tya \
+	pha");
+	
 	  SETBORDER(RED);
+
+#define C_MUSIC_PLAY 0x1003
+        asm("jsr %w", C_MUSIC_PLAY);
+
 	// Set player sprites 0 and 1 position + frame
-	SetSpritePosition(0, player_x + spa_o, \
-		180 - p_jump_pos[timer_j]);
+	SetSpritePosition(0, (u16)(player_x + spa_o), \
+		(u8)(180 - p_jump_pos[timer_j]));
 	SetSpritePosition(1, player_x + spa_o, \
 		180 - p_jump_pos[timer_j]);
 	if((playerState != jumping) && (playerState != falling))
@@ -45,30 +59,114 @@ void vblirq()
 		SetSpritePointer(0, 128 + 4 + f_o);
 		SetSpritePointer(1, 138 + 4 + f_o);
 	}
-
+	
 	  SETBORDER(BLACK);
 	frameFinished = true;
+	
 	// RETURN FROM INTERRUPT
+	asm("pla \
+	tay \
+	pla \
+	tax \
+	pla");
 	return_irq;
 }
 
+
+void LoadSID(u8 n_tr, u8 n_sc)
+{
+	u16* clr;
+	u8* dl;
+	u8 i;
+	u8* dest;
+	u16 ii;
+	clr = (u16*)0x1000;
+	for(ii = 0; ii < 0x7ff; ii++)
+		*clr++ = 0x0;
+	dl = (u8*)&disk_buffer[0];
+	dest = (u8*)0x1000;
+	LoadSectorFromDisk(1, 0, dl);
+        n_tr = *dl++;
+	n_sc = *dl++;
+	dl = (dl + 0x7c + 2); // discard sector header and SID header
+        for(i = 0; i < 254 - 0x7c - 2; i++) //254 = sector size without header
+        {
+                *dest++ = *dl++;
+        }
+        while(n_tr != 0) 
+        {
+                u8 tb;
+		dl = (u8*)&disk_buffer[0];
+                LoadSectorFromDisk(n_tr, n_sc, dl);
+		n_tr = *dl++;
+		n_sc = *dl++;
+		if(n_tr == 0) tb = n_sc;
+		else tb = 254;
+		for(i = 0; i < tb; i++)
+                {
+                        *dest++ = *dl++;
+                }        
+        }
+
+}
 
 void main()
 {
 	u8 i;
 	u8 pw;
-
+	u16 ii;
+	u8* dest;
+	u8* dl;
+	u8* cl;
+	u8 n_sc;// = 0;
+	u8 n_tr;// = 0;	
+	u16* clr;
+	
 	timer_a = 0;
 	timer_j = 0;
 	p_frame = 0;
 	p_speed = 3;
 	playerFacing = right;
 	playerState = standing;
+	
 	k_CLS()
 
 	CHARSET_B()	
 	print(&teststr, sizeof(teststr)-1, 0, 0, LIGHTGREY);
-	//save2file("data    ", 's', &DATASTART, &DATASTART + 8, DRIVE1, 2);
+
+	// clean mapbuffer
+	for(ii = 0; ii < 2000; ii++)
+	{
+		mapbuffer[ii] = 0x0;
+	}
+
+
+	// SID LOADER:
+	LoadSID(1, 0); // sid is at track 1, sector 0
+	
+	// Standard load looks like this:
+	// memory target:
+	dest = (u8*)&mapbuffer;
+	n_tr = 1; // file start sector and track
+	n_sc = 1;
+	LoadDiskFile(n_tr, n_sc, (u8*)dest);
+	// load bg
+	// if uncompressed:
+	// 0x0 - 0x3e7 map data
+	// 0x3e8 - 0x7cf color data 
+	// we compress with comprescr.py
+	//  00 - 01 = offset for color table
+	//  02 .. RLE-encoded data
+	//: # RLE scheme:
+	//# 0x11 0xaa ..  
+	//# copy next aa bytes through
+	//# 0x13 0xbb 0xcc  
+	//# copy in bb cc times
+	//# 0x12 0xdd
+	//# copy 0xdd twice
+	//: # Colormap scheme:
+	// 1000 bytes (0x0a, 0x0b) > 500 bytes (0xab)
+
 
 	// just 0 and 2
 	ENABLE_SPRITES(0b00000011);
@@ -90,7 +188,14 @@ void main()
 	lda #0 \
 	sta $dc03 ");
 	
-	setup_irq(&vblirq, 1);
+	// enable vblank
+	setup_irq(&vblirq, 0);
+
+#define C_MUSIC_INIT 0x1000
+        asm("lda #0 \
+        ldx #0 \
+        ldy #0 \
+        jsr %w", C_MUSIC_INIT);
 
 	while(1) 
 	{
@@ -98,8 +203,9 @@ void main()
 		frameFinished = false;
 		
 		  SETBORDER(WHITE);
+		UpdatePlayerState();	
 		POLL_INPUT();
-		UpdatePlayerState();
+		
 		  SETBORDER(BLACK);
 		
 	}
@@ -190,4 +296,26 @@ void UpdatePlayerState()
 //
 //////////////////////////////////////////////////////
 
+}
+
+void LoadDiskFile(u8 n_tr, u8 n_sc, u8* dest)
+{
+	u8* dl;
+	u8 i;
+	u8 tb;
+	tb = 0;
+	while(n_tr != 0)
+	{
+		dl = (u8*)&disk_buffer[0];
+                LoadSectorFromDisk(n_tr, n_sc, (u8*)dl); // store it in buffer 1st
+		n_tr = *dl++;
+		n_sc = *dl++; // header = next track/sector
+		if(n_tr == 0) {
+			tb = n_sc; }
+		else { tb = 254; }
+                for(i = 0; i < tb; i++)
+                { 	// copy rest from buffer to destination
+                        *dest++ = *dl++;
+                }  
+	}
 }

@@ -1,6 +1,14 @@
 // sidplay/main.c
 #include <bent64.h>
 
+/*
+*
+* Note:
+*
+* SID files must not use zero-page 02-03! !
+*
+*/
+
 //
 static u8 disk_buffer[256];
 
@@ -23,27 +31,34 @@ void main()
         u8 c;
         u8* dl;
         u8* cl = (u8*)0x1000;
+        u8* dest;
+        u8 n_tr, n_sc;
 
         k_CLS();
-        // 17,1 taken from diskfiles.txt
-        // Default sector interleave is 10 we used 1.
-        dl = &disk_buffer[0];//(u8*)0x8000-2-0x7c+6; // f88
-        //void LoadSectorFromDisk(u8 trackNo, u8 secNo, u8* tgt);
-        LoadSectorFromDisk(1, 0, dl);
-        dl = dl + 0x7c + 4; // discard sector header and SID header
+        
+	// SID LOADER:
+	dl = (u8*)&disk_buffer[0];
+	dest = (u8*)0x1000;
+	LoadSectorFromDisk(1, 0, dl);
+        n_tr = *dl++;
+	n_sc = *dl++;
+	dl = (dl + 0x7c + 2); // discard sector header and SID header
         for(i = 0; i < 254 - 0x7c - 2; i++) //254 = sector size without header
         {
-                *cl++ = *dl++;
+                *dest++ = *dl++;
         }
-        // Standard load looks like this:
-        for(c = 1; c < 7; c++) // c+=1 is interleave of 1
+        while(n_tr != 0) 
         {
-                dl = &disk_buffer[0];
-                LoadSectorFromDisk(1, c, dl);
-                dl += 2; // discard sector header
-                for(i = 0; i < 254; i++)
+                u8 tb;
+		dl = (u8*)&disk_buffer[0];
+                LoadSectorFromDisk(n_tr, n_sc, dl);
+		n_tr = *dl++;
+		n_sc = *dl++;
+		if(n_tr == 0) tb = n_sc;
+		else tb = 254;
+		for(i = 0; i < tb; i++)
                 {
-                        *cl++ = *dl++;
+                        *dest++ = *dl++;
                 }        
         }
         

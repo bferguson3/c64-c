@@ -9,7 +9,7 @@ INCLUDES=src
 RUN=$(EMU) $(DISKNAME).d64 > emulator_out.txt
 DATAFILE=.
 PY=python3
-FNO=1
+FNO=0
 
 ####################################################
 
@@ -30,8 +30,10 @@ main:
 		build/$(APPNAME).exo -t19 -s0
 
 d64files: $(PROJECT)/diskfiles/*
-	$(PY) tools/maked64.py -f $(DISKNAME).d64 $^ -t$(FNO) -i1 -s0
-	$(eval FNO=$(shell echo $$(($(FNO)+1))))
+	for file in $^ ; do \
+		$(PY) tools/maked64.py -f $(DISKNAME).d64 $${file} ;\
+	done
+
 d64: 
 	mkdir -p $(PROJECT)/diskfiles
 	mkdir -p build
@@ -45,7 +47,7 @@ binary:
 
 clean:
 	rm -rf build
-	rm -rf disk.d64
+	rm -rf app.d64
 	rm -rf diskfiles.txt 
 	rm -rf emulator_out.txt 
 	rm -rf mkd64_out.txt 

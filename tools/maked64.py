@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-# maked64.py v0.2
+# maked64.py v0.3
 
 ### @retrodevdiscord
 ### http://discord.gg/Js3uUrc
@@ -41,8 +41,10 @@ if(len(sys.argv) == 1):
 $ python3 maked64.py -n <diskname>\
 \n\t Make a blank d64 file.\
 \n\n$ maked64.py -f <diskname> <filename> [-i# | -s# | -t#]\
-\n\tAdds filename to diskname with optional parameters interleave,\
-\n\tstart sector, start track; where i=(0,9), s=(0,20), t=(1,35) \n")
+\n\t Adds filename to diskname with optional parameters interleave,\
+\n\tstart sector, start track; where i=(0,99), s=(0,20), t=(1,35) \n\
+\t With no argument, new files will be placed at the first available\n\
+\tsector with an interleave of 10.\n")
     sys.exit()
 if(sys.argv[1] == '-n'):
     if(len(sys.argv) == 2):
@@ -61,8 +63,8 @@ if(sys.argv[1] == '-f'):
         i = 4
         interleave = 10 # interleave*256 bytes are skipped every 254* bytes when
         # writing files to the image (*+2 track/sector bytes)
-        startsec = 0
-        starttrac = 17
+        startsec = -1
+        starttrac = 0
         while i < len(sys.argv):
             if(sys.argv[i][:2] == '-i'):
                 interleave = int(sys.argv[i][2:4])
@@ -71,9 +73,159 @@ if(sys.argv[1] == '-f'):
             if(sys.argv[i][:2] == '-t'):
                 starttrac = int(sys.argv[i][2:4])
             i += 1
-        starttrac -= 1
+        starttrac -= 1 # change 1-35 to 0-34!
             
     mode = ADD_FILE
+
+
+# fill in the sector count array for reference
+seccounts = []
+s = 0
+h = 1
+while h <= 17:
+    seccounts.append(s)
+    s += 21
+    h += 1
+while h <= 24:
+    seccounts.append(s)
+    s += 19
+    h += 1
+while h <= 30:
+    seccounts.append(s)
+    s += 18
+    h += 1
+while h <= 35:
+    seccounts.append(s)
+    s += 17
+    h += 1
+
+## Helper function definitions ##
+def PrintBAM(dat):
+    # 0x165004 - 8f: BAM entries
+    i = 0x16504
+    t = 0
+    print('track no', 'free sectors', '   visualization')
+    while i < 0x16590:
+        frsec = dat[i]
+        print(' ',t+1, '\t\t',frsec, end='\t')
+        # ff ff 1f
+        # bits are read left to right
+        dmt = ''
+        b = 0
+        while b < 8:
+            if(dat[i+1] & (1<<b)):
+                dmt += '.'
+            else:
+                dmt += str(b)
+            b += 1
+        b = 0
+        while b < 8:
+            if(dat[i+2] & (1<<b)):
+                dmt += '.'
+            else:
+                dmt += str(b)
+            b += 1
+        if(t < 17):
+            se = 4
+        elif (t < 24):
+            se = 2
+        elif (t < 30):
+            se = 1
+        else:
+            se = 0
+        b = 0
+        while b < se:
+            if(dat[i+3] & (1<<b)):
+                dmt += '.'
+            else:
+                dmt += str(b)
+            b += 1
+        print(dmt)
+        t += 1
+        i += 4
+    return
+
+def GetTrackFromSec(s):
+    if(s < 357):
+        a = 1 + math.floor(s/21)
+    elif(s < 490):
+        a = 18 + math.floor((s-357)/19)
+    elif(s < 598):
+        a = 25 + math.floor((s-490)/18)
+    else:
+        a = 31 + math.floor((s-598)/17)
+    return a
+
+def GetNumSecs(tr):
+    if(tr < 18):
+        return 21
+    elif(tr < 25):
+        return 19
+    elif(tr < 31):
+        return 18
+    else:
+        return 17
+
+def GetFirstEmpty():
+    global ds
+    tr_, se_ = 0, 0
+    r = 0
+    while r < len(ds):
+        if(ds[r] == 0):
+            if(ds[r+1] == 0):
+                # is blank
+                se_ = r/256
+                r = len(ds)
+        r += 256
+    tr_ = GetTrackFromSec(se_) - 1
+    if(tr_ > 0):
+        se_ = se_ - GetNumSecs(tr_) 
+    return int(tr_), int(se_)
+
+def GetDiskOffset(tr, se):
+    o = 0
+    if (tr < 17): # 0-17
+        o = 0 + (tr*0x1500)
+    elif (tr < 24): # 18+
+        o = 0x16500 + ((tr-17)*0x1300)
+    elif (tr < 30): # 25+
+        o = 0x1ea00 + ((tr-24)*0x1200)
+    else: # 31+
+        o = 0x25600 + ((tr-30)*0x1100)
+    return o + (se*256)
+
+def TickBam(ds, s, final=False):
+    t=GetTrackFromSec(s)-1 # what track are we on?
+    si = s - seccounts[t]
+    ofs = GetDiskOffset(t, si) # where in the disk?
+    nofs = ofs + ((interleave)*256) # where is our next sector for this file
+    i = 0
+    while (nofs/256) > seccounts[i]:
+        i += 1
+    # next track found
+    if not final:
+        #ds[ofs] = i # so set it on the sector...
+        nsi = int((nofs/256)) - seccounts[i-1] # get the next
+        if(nsi >= GetNumSecs(i)): # sector
+            nsi -= GetNumSecs(i) # of the target track
+        ds[ofs+1] = nsi  # and set that on the sector header as well!
+        ds[ofs] = int(GetTrackFromSec(nofs/256))
+    else: #last sector, so
+        ds[ofs] = 0
+        rem = len(infile)%254
+        ds[ofs+1] = rem+1 
+    # subtract one from available sectors in this track 
+    ds[0x16504 + (t*4)] -= 1
+    if(si < 8):
+        ds[0x16504 + (t*4) + 1] ^= (1 << si) # sectors 0-7
+    elif(si < 16):
+        si -= 8
+        ds[0x16504 + (t*4) + 2] ^= (1 << si) # sectors 8-15
+    else:
+        si -= 16
+        ds[0x16504 + (t*4) + 3] ^= (1 << (si)) # sectors 16-20
+    return ds
+
 
 ######################################
 ###### MAKE BLANK
@@ -149,7 +301,6 @@ if mode == MAKE_BLANK:
     while i <= 0xaa:#9f: # disk name padding
         bam[i] = 0xa0
         i += 1
-
 # Don't do this, it breaks stuff #
     #bam[0xa0] = 0xa0 # two blank bytes
     #bam[0xa1] = 0xa0
@@ -179,100 +330,9 @@ if mode == MAKE_BLANK:
     f.close()
     print(fn + '.d64 created.')
 
-
-#################################
-## SHOW BAM
-#################################
-def PrintBAM(dat):
-    # 0x165004 - 8f: BAM entries
-    i = 0x16504
-    t = 0
-    print('track no', 'free sectors', '   visualization')
-    while i < 0x16590:
-        frsec = dat[i]
-        print(' ',t+1, '\t\t',frsec, end='\t')
-        # ff ff 1f
-        # bits are read left to right
-        dmt = ''
-        b = 0
-        while b < 8:
-            if(dat[i+1] & (1<<b)):
-                dmt += '.'
-            else:
-                dmt += str(b)
-            b += 1
-        b = 0
-        while b < 8:
-            if(dat[i+2] & (1<<b)):
-                dmt += '.'
-            else:
-                dmt += str(b)
-            b += 1
-        if(t < 17):
-            se = 4
-        elif (t < 24):
-            se = 2
-        elif (t < 30):
-            se = 1
-        else:
-            se = 0
-        b = 0
-        while b < se:
-            if(dat[i+3] & (1<<b)):
-                dmt += '.'
-            else:
-                dmt += str(b)
-            b += 1
-        print(dmt)
-        t += 1
-        i += 4
-    return
-# fill in the sector count array for reference
-seccounts = []
-s = 0
-h = 1
-while h <= 17:
-    seccounts.append(s)
-    s += 21
-    h += 1
-while h <= 24:
-    seccounts.append(s)
-    s += 19
-    h += 1
-while h <= 30:
-    seccounts.append(s)
-    s += 18
-    h += 1
-while h <= 35:
-    seccounts.append(s)
-    s += 17
-    h += 1
-
-def GetTrackFromSec(s):
-    if(s < 357):
-        a = 1 + math.floor(s/21)
-    elif(s < 490):
-        a = 18 + math.floor((s-357)/19)
-    elif(s < 598):
-        a = 25 + math.floor((s-490)/18)
-    else:
-        a = 31 + math.floor((s-598)/17)
-    return a
-
-def GetNumSecs(tr):
-    if(tr < 18):
-        return 21
-    elif(tr < 25):
-        return 19
-    elif(tr < 31):
-        return 18
-    else:
-        return 17
-
 #################################
 ## ADD FILE
 #################################
-
 
 if mode == ADD_FILE:
     global ds 
@@ -305,6 +365,7 @@ if mode == ADD_FILE:
         i += 1
     dir_ofs = 0x16600
     ds = indisk
+    # get first empty dir entry
     while(ds[dir_ofs+2] != 0x00):
         dir_ofs += 0x20
     ds[0+dir_ofs] = 0
@@ -313,6 +374,8 @@ if mode == ADD_FILE:
     file_type = 0x82 #prg, closed
     ds[2+dir_ofs] = file_type
     # file location
+    if(starttrac == -1):
+        starttrac, startsec = GetFirstEmpty()
     ds[3+dir_ofs] = starttrac+1
     ds[4+dir_ofs] = startsec
     # 16 char petascii name / a0 pad
@@ -333,19 +396,8 @@ if mode == ADD_FILE:
     ds[0x1e+dir_ofs] = ussec & 0xff
     ds[0x1f+dir_ofs] = (ussec & 0xff00) >> 8
 
-    def GetDiskOffset(tr, se):
-        o = 0
-        if (tr < 17): # 0-17
-            o = 0 + (tr*0x1500)
-        elif (tr < 24): # 18+
-            o = 0x16500 + ((tr-17)*0x1300)
-        elif (tr < 30): # 25+
-            o = 0x1ea00 + ((tr-24)*0x1200)
-        else: # 31+
-            o = 0x25600 + ((tr-30)*0x1100)
-        return o + (se*256)
     f_ofs = GetDiskOffset(starttrac, startsec)
-
+    print(starttrac, startsec)
     # then, copy in file data @ 
     #          ~ + given interleave
     # interleave broken: adjust headers FIXME
@@ -366,37 +418,6 @@ if mode == ADD_FILE:
     print('start track/sector',starttrac,startsec, 'interleave',interleave)
     print('filesize',len(infile), '(' + str(ussec),'sectors)')
     print('name set to: ',fn)
-
-    def TickBam(ds, s, final=False):
-        t=GetTrackFromSec(s)-1 # what track are we on?
-        si = s - seccounts[t]
-        ofs = GetDiskOffset(t, si) # where in the disk?
-        nofs = ofs + ((interleave)*256) # where is our next sector for this file
-        i = 0
-        while (nofs/256) > seccounts[i]:
-            i += 1
-        # next track found
-        if not final:
-            ds[ofs] = i # so set it on the sector...
-            nsi = int((nofs/256)) - seccounts[i-1] # get the next
-            if(nsi >= GetNumSecs(i)): # sector
-                nsi -= GetNumSecs(i) # of the target track
-            ds[ofs+1] = nsi  # and set that on the sector header as well!
-        else: #last sector, so
-            ds[ofs] = 0
-            rem = len(infile)%254
-            ds[ofs+1] = rem+1 
-        # subtract one from available sectors in this track 
-        ds[0x16504 + (t*4)] -= 1
-        if(si < 8):
-            ds[0x16504 + (t*4) + 1] ^= (1 << si) # sectors 0-7
-        elif(si < 16):
-            si -= 8
-            ds[0x16504 + (t*4) + 2] ^= (1 << si) # sectors 8-15
-        else:
-            si -= 16
-            ds[0x16504 + (t*4) + 3] ^= (1 << (si)) # sectors 16-20
-        return ds
 
     i = ussec 
     ss = seccounts[starttrac] + startsec 
