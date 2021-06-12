@@ -11,11 +11,11 @@ if(len(sys.argv) > 2):
 else:
         ofn = sys.argv[1]
 # RLE scheme:
-# 0x01 0xaa ..  
+# 0x11 0xaa ..  
 # copy next aa bytes through
-# 0x03 0xbb 0xcc  
+# 0x13 0xbb 0xcc  
 # copy in bb cc times
-# 0x02 0xdd
+# 0x12 0xdd
 # copy 0xdd twice
 out = []
 i = 0
@@ -50,7 +50,7 @@ ofs = len(out)
 while i < 0x7cf:
         out.append((map[i] << 4) | map[i+1])
         i += 2
-bn = ofn
+bn = sys.argv[1].split('.')[0]
 b = 0
 if(bn[-3:] != 'rle'):
         bn += '.rle'

@@ -121,7 +121,10 @@ void main()
 	u8 n_sc;// = 0;
 	u8 n_tr;// = 0;	
 	u16* clr;
-	
+	u16 len;
+	u8 tcp;
+	u8 tcp2;
+
 	timer_a = 0;
 	timer_j = 0;
 	p_frame = 0;
@@ -147,9 +150,9 @@ void main()
 	// Standard load looks like this:
 	// memory target:
 	dest = (u8*)&mapbuffer;
-	n_tr = 1; // file start sector and track
-	n_sc = 1;
-	LoadDiskFile(n_tr, n_sc, (u8*)dest);
+	//n_tr = 1; // file start sector and track
+	//n_sc = 1;
+	LoadDiskFile(1, 1, (u8*)dest);
 	// load bg
 	// if uncompressed:
 	// 0x0 - 0x3e7 map data
@@ -166,7 +169,17 @@ void main()
 	//# copy 0xdd twice
 	//: # Colormap scheme:
 	// 1000 bytes (0x0a, 0x0b) > 500 bytes (0xab)
-
+	//; SCREENRAM 
+	ii = 2;
+	len = mapbuffer[0] + (mapbuffer[1]*256);
+	dl = (u8*)SCREENRAM;//COLORRAM;
+	for(ii = 2; ii < len; ii++)
+	{
+		tcp = (mapbuffer[ii] >> 4);
+		tcp2 = (mapbuffer[ii] & 0x0f);
+		*dl++ = tcp;
+		*dl++ = tcp2;
+	}
 
 	// just 0 and 2
 	ENABLE_SPRITES(0b00000011);
@@ -218,7 +231,7 @@ void UpdatePlayerState()
 // PLAYER STATE CONTROL 
 //
 	// Turn / run left or right
-	if((JOY1_STATE & JOYRIGHT) \
+	if((JOY2_STATE & JOYRIGHT) \
 	&& (playerState != jumping)\
 	&& (playerState != falling))
 	{
@@ -229,7 +242,7 @@ void UpdatePlayerState()
 		}
 		else playerState = running;	
 	}
-	else if((JOY1_STATE & JOYLEFT) \
+	else if((JOY2_STATE & JOYLEFT) \
 		&& (playerState != jumping)\
 		&& (playerState != falling))
 	{
@@ -248,9 +261,9 @@ void UpdatePlayerState()
 			timer_a = 0; 
 		}
 	}
-	if(JOY1_STATE & JOYRIGHT) player_x += p_speed;
-	else if(JOY1_STATE & JOYLEFT) player_x -= p_speed;
-	if ((JOY1_STATE & JOYUP) && (playerState != jumping) \
+	if(JOY2_STATE & JOYRIGHT) player_x += p_speed;
+	else if(JOY2_STATE & JOYLEFT) player_x -= p_speed;
+	if ((JOY2_STATE & JOYUP) && (playerState != jumping) \
 		&& (playerState != falling))
 	{
 		playerState = jumping;
