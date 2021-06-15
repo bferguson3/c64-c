@@ -125,6 +125,10 @@ static u8 globalSubE;
 #define SETBORDER(n) globalSubE = n; \
 	asm("lda %v", globalSubE); \
 	asm("sta $d020");
+#define SETBACKGROUND(n) globalSubE = n; \
+	asm("lda %v", globalSubE); \
+	asm("sta $d021");
+
 
 // Colors for quickness						 
 #define SPRITECOLOR_0(n) asm("lda #%b", (u8)n); \

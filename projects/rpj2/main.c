@@ -123,7 +123,7 @@ void main()
 	u16* clr;
 	u16 len;
 	u8 tcp;
-	u8 tcp2;
+	u8 n;
 
 	timer_a = 0;
 	timer_j = 0;
@@ -133,6 +133,7 @@ void main()
 	playerState = standing;
 	
 	k_CLS()
+	SETBACKGROUND(BLACK);
 
 	CHARSET_B()	
 	print(&teststr, sizeof(teststr)-1, 0, 0, LIGHTGREY);
@@ -160,25 +161,51 @@ void main()
 	// we compress with comprescr.py
 	//  00 - 01 = offset for color table
 	//  02 .. RLE-encoded data
-	//: # RLE scheme:
-	//# 0x11 0xaa ..  
-	//# copy next aa bytes through
-	//# 0x13 0xbb 0xcc  
-	//# copy in bb cc times
-	//# 0x12 0xdd
-	//# copy 0xdd twice
-	//: # Colormap scheme:
-	// 1000 bytes (0x0a, 0x0b) > 500 bytes (0xab)
-	//; SCREENRAM 
-	ii = 2;
-	len = mapbuffer[0] + (mapbuffer[1]*256);
-	dl = (u8*)SCREENRAM;//COLORRAM;
-	for(ii = 2; ii < len; ii++)
+	ii = 0;//2;
+	dl = SCREENRAM;
+	//len = mapbuffer[0] + (mapbuffer[1]*256);
+	for(; ii < 1000/*len*/; ii++)
 	{
-		tcp = (mapbuffer[ii] >> 4);
-		tcp2 = (mapbuffer[ii] & 0x0f);
-		*dl++ = tcp;
-		*dl++ = tcp2;
+		*dl++ = mapbuffer[ii];
+		/*
+		if(mapbuffer[ii] == 0x11)
+		{
+			ii++;
+			tcp = mapbuffer[ii];
+			ii++;
+			while (tcp > 0)
+			{
+				*dl++ = mapbuffer[ii];
+				ii++;
+				tcp--;
+			}
+		}
+		else if(mapbuffer[ii] == 0x12)
+		{
+			ii++;
+			tcp = mapbuffer[ii];
+			*dl++ = tcp;
+			*dl++ = tcp;
+		}
+		else if(mapbuffer[ii] == 0x13)
+		{
+			ii++;
+			tcp = mapbuffer[ii];
+			ii++;
+			n = mapbuffer[ii];
+			while(n > 0)
+			{
+				*dl++ = tcp;
+				n--;
+			}
+		}
+		*/
+	}
+	dl = COLORRAM;
+	for(; ii < 1500/*(len+500)*/; ii++)
+	{
+		*dl++ = mapbuffer[ii] >> 4;
+		*dl++ = mapbuffer[ii];
 	}
 
 	// just 0 and 2
