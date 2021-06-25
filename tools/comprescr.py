@@ -1,7 +1,14 @@
 #!/usr/bin/python3
 # comprescr.py
+# usage:
+#  $ python3 comprescr.py mapfile.py [-c] [-m]
+# where:
+# -c : only compress color table, don't RLE map (for rpj2)
+# -m : look for <file>_cm.py to make a collision mask (4-bit values)
+
 import os,sys
 coloronly = False
+cmask = False
 f = open(sys.argv[1], 'r')
 ib = f.read()
 f.close()
@@ -11,6 +18,8 @@ if(len(sys.argv) > 2):
         for s in sys.argv:
                 if s == '-c':
                         coloronly = True
+                elif s == '-m':
+                        cmask = True
                 else:
                         ofn = sys.argv[2]
 else:
@@ -62,6 +71,38 @@ while i < 2000:
         out.append((map[i] << 4) | map[i+1])
         i += 2
 bn = sys.argv[1].split('.')[0]
+# collision mask?
+mask=[]
+om=[]
+if cmask:
+        f = open(bn+'_cm.py', 'r')
+        ib = f.read()
+        f.close()
+        exec(ib) # mask[]
+        i = 0 
+        while i < 500:
+                b = 0
+                ob = ''
+                while b < 2:
+                        if (mask[(i*2)+b] == 30): # ^
+                                ob = ob + '1'
+                        elif (mask[(i*2)+b] == 31): # <
+                                ob = ob + '2'
+                        elif (mask[(i*2)+b] == 22): # v
+                                ob = ob + '3'
+                        elif (mask[(i*2)+b] == 62): # >
+                                ob = ob + '4'
+                        else:
+                                ob = ob + '0'
+                        #if(mask[(i*8)+b] != 160):
+                        #        ob = ob + '0'
+                        #else:
+                        #        ob = ob + '1'
+                        b += 1
+                ob = int(ob, 16)
+                om.append(ob)
+                i += 1
+#print(om)
 b = 0
 if(bn[-3:] != 'rle'):
         bn += '.rle'
@@ -70,9 +111,15 @@ if not coloronly:
         f.write(bytes([ofs & 0xff]))
         f.write(bytes([ofs >> 8]))
 while b < len(out):
-        print(b, out[b])
+        #print(b, out[b])
         f.write(bytes([out[b]]))
         b += 1
-print(str(len(map)) + ' bytes compressed to ' + str(len(out)))
-
-print(bn + ' written OK.')
+if cmask:
+        b = 0
+        while b < len(om):
+                f.write(bytes([om[b]]))
+                b += 1
+print(str(len(map)) + ' bytes compressed to ' + str(len(out)), end='')
+if cmask:
+        print(', with ' + str(len(om)) + 'b collision mask.', end='')
+print('\n' + bn + ' written OK.')

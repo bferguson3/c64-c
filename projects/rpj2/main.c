@@ -21,18 +21,23 @@ u8 p_frame;
 u8 p_speed;
 u8 timer_j;
 u16 player_x = 100;
+u8 player_y = 20;
 static u8 f_o;
 static s8 spa_o = 0;
 u8 p_anm_frames[] = { 0, 1, 2, 3, 4, 3 };
-u8 p_jump_pos[] = { 13, 24, 33, 40, 47, 52, 56, 60, 62 };
+//u8 p_jump_pos[] = { 0, 13, 24, 33, 40, 47, 52, 56, 60, 62 }; < px offset
+//u8 p_jump_pos[] = { 0, 13, 11, 9, 7, 6, 5, 4, 3, 2 }; < too fast
+u8 p_jump_pos[] = { 0, 7, 6, 6, 5, 5, 4, 4, 3, 3, 3, 3, 2, 2, 2, 2, 1, 1, 1 };
 //u8 last_tr;
 
-static u8 mapbuffer[2000];
+static u8 mapbuffer[2000]; // Dont forget to use this as general purpose RAM!
+static u8 collisionmask[1000]; // 1500-1999 decompressed (0-15)
 
 bool frameFinished = false;
 
 void vblirq()
 {
+	u8 j_ofs = 0;
 	asm("pha \
 	txa \
 	pha \
@@ -41,14 +46,18 @@ void vblirq()
 	
 	  SETBORDER(RED);
 
+	// Play music!
 #define C_MUSIC_PLAY 0x1003
         asm("jsr %w", C_MUSIC_PLAY);
 
-	// Set player sprites 0 and 1 position + frame
+	// Set player sprites 0 and 1 position
+	if(playerState == jumping) player_y -= p_jump_pos[timer_j];
 	SetSpritePosition(0, (u16)(player_x + spa_o), \
-		(u8)(180 - p_jump_pos[timer_j]));
+		(u8)(player_y));
 	SetSpritePosition(1, player_x + spa_o, \
-		180 - p_jump_pos[timer_j]);
+		player_y);
+
+	// Set the animation frame
 	if((playerState != jumping) && (playerState != falling))
 	{
 		SetSpritePointer(0, 128 + p_anm_frames[p_frame] + f_o);
@@ -80,9 +89,11 @@ void LoadSID(u8 n_tr, u8 n_sc)
 	u8 i;
 	u8* dest;
 	u16 ii;
+	// Clear the 4kb of SID RAM
 	clr = (u16*)0x1000;
 	for(ii = 0; ii < 0x7ff; ii++)
 		*clr++ = 0x0;
+	// First sector:
 	dl = (u8*)&disk_buffer[0];
 	dest = (u8*)0x1000;
 	LoadSectorFromDisk(1, 0, dl);
@@ -93,6 +104,7 @@ void LoadSID(u8 n_tr, u8 n_sc)
         {
                 *dest++ = *dl++;
         }
+	// Remaining sectors:
         while(n_tr != 0) 
         {
                 u8 tb;
@@ -124,13 +136,14 @@ void main()
 	u16 len;
 	u8 tcp;
 	u8 n;
+	s8 z;
 
 	timer_a = 0;
 	timer_j = 0;
 	p_frame = 0;
 	p_speed = 3;
 	playerFacing = right;
-	playerState = standing;
+	//playerState = standing;
 	
 	k_CLS()
 	SETBACKGROUND(BLACK);
@@ -144,78 +157,47 @@ void main()
 		mapbuffer[ii] = 0x0;
 	}
 
-
-	// SID LOADER:
 	LoadSID(1, 0); // sid is at track 1, sector 0
-	
-	// Standard load looks like this:
-	// memory target:
+
 	dest = (u8*)&mapbuffer;
-	//n_tr = 1; // file start sector and track
-	//n_sc = 1;
-	LoadDiskFile(1, 1, (u8*)dest);
-	// load bg
-	// if uncompressed:
-	// 0x0 - 0x3e7 map data
-	// 0x3e8 - 0x7cf color data 
-	// we compress with comprescr.py
-	//  00 - 01 = offset for color table
-	//  02 .. RLE-encoded data
-	ii = 0;//2;
+	LoadDiskFile(1, 1, (u8*)dest); // map1.rle @ 1,1
+	// Load in uncompressed map
+	ii = 0;
 	dl = SCREENRAM;
-	//len = mapbuffer[0] + (mapbuffer[1]*256);
-	for(; ii < 1000/*len*/; ii++)
+	for(; ii < 1000; ii++)
 	{
 		*dl++ = mapbuffer[ii];
-		/*
-		if(mapbuffer[ii] == 0x11)
-		{
-			ii++;
-			tcp = mapbuffer[ii];
-			ii++;
-			while (tcp > 0)
-			{
-				*dl++ = mapbuffer[ii];
-				ii++;
-				tcp--;
-			}
-		}
-		else if(mapbuffer[ii] == 0x12)
-		{
-			ii++;
-			tcp = mapbuffer[ii];
-			*dl++ = tcp;
-			*dl++ = tcp;
-		}
-		else if(mapbuffer[ii] == 0x13)
-		{
-			ii++;
-			tcp = mapbuffer[ii];
-			ii++;
-			n = mapbuffer[ii];
-			while(n > 0)
-			{
-				*dl++ = tcp;
-				n--;
-			}
-		}
-		*/
 	}
+	// Color the screen
 	dl = COLORRAM;
 	for(; ii < 1500/*(len+500)*/; ii++)
 	{
 		*dl++ = mapbuffer[ii] >> 4;
 		*dl++ = mapbuffer[ii];
 	}
-
+	// Decompress collision mask to collisionmask[]
+	dl = SCREENRAM;
+	dest = (u8*)&collisionmask[0];
+	for(; ii < 2000; ii++)
+	{
+		n_sc = mapbuffer[ii];
+		*dest++ = (n_sc >> 4);
+		*dest++ = (n_sc & 0xf);
+			/*
+			# 4 = >
+			# 1 = ^
+			# 2 = <
+			# 3 = v
+			# 0 = ' '
+			*/
+	}
 	// just 0 and 2
 	ENABLE_SPRITES(0b00000011);
 	SET_MCSPRITES(0)
-	
+	// Hero:
 	SetSpritePointer(0, 128);
 	SetSpritePosition(0, 90, 90);
 	SPRITECOLOR_0(WHITE);
-	
 	SetSpritePointer(1, 138);
 	SetSpritePosition(1, 90, 90);
 	SPRITECOLOR_1(RED);
@@ -231,14 +213,19 @@ void main()
 	// enable vblank
 	setup_irq(&vblirq, 0);
 
+	// Start music
 #define C_MUSIC_INIT 0x1000
         asm("lda #0 \
         ldx #0 \
         ldy #0 \
         jsr %w", C_MUSIC_INIT);
 
+	// set player to falling
+	playerState = falling;
+
 	while(1) 
 	{
+		// Do nothing until vblank returns 
 		while(!frameFinished){}
 		frameFinished = false;
 		
@@ -252,9 +239,10 @@ void main()
 	// end of main()
 }
 
+bool CheckSpriteBottomCollision(u8 spr_no);
+
 void UpdatePlayerState()
 {
-///////////////////////////////////////////////////////
 // PLAYER STATE CONTROL 
 //
 	// Turn / run left or right
@@ -288,8 +276,25 @@ void UpdatePlayerState()
 			timer_a = 0; 
 		}
 	}
-	if(JOY2_STATE & JOYRIGHT) player_x += p_speed;
-	else if(JOY2_STATE & JOYLEFT) player_x -= p_speed;
+	// Normal walking speed
+	if(JOY2_STATE & JOYRIGHT) 
+	{
+		if((playerState == falling) || (playerState == jumping)) player_x += p_speed;
+		else {
+			if(CheckSpriteBottomCollision(0)) player_x += p_speed;
+			else playerState = falling;
+		}
+	}
+	else if(JOY2_STATE & JOYLEFT) 
+	{
+		if((playerState == falling) || (playerState == jumping)) player_x -= p_speed;
+		else {
+			if(CheckSpriteBottomCollision(0)) player_x -= p_speed;
+			else playerState = falling;
+		}
+	}
+	
+	// TODO change this set playerState to jumping WHILE its held down
 	if ((JOY2_STATE & JOYUP) && (playerState != jumping) \
 		&& (playerState != falling))
 	{
@@ -317,12 +322,18 @@ void UpdatePlayerState()
 	{
 		// JUMPING POSITION!
 		timer_j ++ ;
-		if(timer_j > 7) playerState = falling;
+		if(timer_j > sizeof(p_jump_pos)) playerState = falling;
 	}
+	// TODO 
+	// continue to 'jump' while the button is held down.
+	// if its released, set timer_j to 0,
+	// and when falling, set position to y - j_pos_arr
 	else if (playerState == falling)
 	{
-		timer_j --;
-		if(timer_j == 0) playerState = standing;
+		if(!CheckSpriteBottomCollision(0)) player_y += p_jump_pos[timer_j];
+		else playerState = standing;
+		timer_j--;
+		if(timer_j == 2) timer_j = 3;
 	}
 	// add 5 for left facing sprites
 	if ( playerFacing == left ) {
@@ -333,11 +344,37 @@ void UpdatePlayerState()
 		f_o = 0;
 		spa_o = 0;
 	}
-//
-//////////////////////////////////////////////////////
-
 }
 
+#define FLOOR_COLLISION 1
+
+bool CheckSpriteBottomCollision(u8 spr_no)
+{
+	u8 y;
+	u16 x;
+	u8* dr;
+	x = *(u8*)(0xd000 + (spr_no*2));
+	y = *(u8*)(0xd001 + (spr_no*2)) - 21; // sprites are 24x21 px
+	// we only need to check the tile below,
+	// +1, and +2. 
+	if ( *(u8*)(0xd010) & (1 << spr_no) )
+		x += 256;
+	x = (x >> 3) - 1;
+	// sprite facing: am I the player?
+	if(playerFacing == right) x -= 1; // fix?
+	y = (y >> 3) - 1;
+	if(collisionmask[(y*40)+x] == FLOOR_COLLISION) {
+		//SetSpritePosition(spr_no, x*8, (y-1)*8);
+		// am I the player?
+		player_y = ((y + 1)*8) + 21;
+		return 1;
+	}
+	else {
+		return 0;
+	}
+}
+
+// Standard load file from disk code 
 void LoadDiskFile(u8 n_tr, u8 n_sc, u8* dest)
 {
 	u8* dl;
@@ -359,3 +396,41 @@ void LoadDiskFile(u8 n_tr, u8 n_sc, u8* dest)
                 }  
 	}
 }
+
+
+///////////////////////////////////////////
+
+// RLE code that doesn't work for some reason
+		/*
+		if(mapbuffer[ii] == 0x11)
+		{
+			ii++;
+			tcp = mapbuffer[ii];
+			ii++;
+			while (tcp > 0)
+			{
+				*dl++ = mapbuffer[ii];
+				ii++;
+				tcp--;
+			}
+		}
+		else if(mapbuffer[ii] == 0x12)
+		{
+			ii++;
+			tcp = mapbuffer[ii];
+			*dl++ = tcp;
+			*dl++ = tcp;
+		}
+		else if(mapbuffer[ii] == 0x13)
+		{
+			ii++;
+			tcp = mapbuffer[ii];
+			ii++;
+			n = mapbuffer[ii];
+			while(n > 0)
+			{
+				*dl++ = tcp;
+				n--;
+			}
+		}
+		*/

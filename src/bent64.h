@@ -211,7 +211,7 @@ void SetSpritePointer(u8 sprNo, u8 ptr)
 void SetSpritePosition(u8 sprNo, u16 x, u8 y)
 {
 	u8* yl;
-	yl = (u8*)(0xd000 + (sprNo * 2));
+	yl = (u8*)(0xd000 + (sprNo * 2)); // X1,Y1,X2,Y2...
 	*yl++ = x & 0xff;
 	*yl = y;
 	if(x & 0x100)
