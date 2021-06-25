@@ -6,8 +6,10 @@
 //
 void UpdatePlayerState();
 void vblirq();
-void LoadDiskFile(u8 n_tr, u8 n_sec, u8* dest);
-static u8 disk_buffer[256];
+
+bool CheckSpriteBottomCollision(u8 spr_no);
+void LoadSID(u8 n_tr, u8 n_sc);
+
 //
 const u8 teststr[] = "loading";
 
@@ -22,12 +24,13 @@ u8 p_speed;
 u8 timer_j;
 u16 player_x = 100;
 u8 player_y = 20;
+bool jumpReleased = true;
 static u8 f_o;
 static s8 spa_o = 0;
 u8 p_anm_frames[] = { 0, 1, 2, 3, 4, 3 };
 //u8 p_jump_pos[] = { 0, 13, 24, 33, 40, 47, 52, 56, 60, 62 }; < px offset
-//u8 p_jump_pos[] = { 0, 13, 11, 9, 7, 6, 5, 4, 3, 2 }; < too fast
-u8 p_jump_pos[] = { 0, 7, 6, 6, 5, 5, 4, 4, 3, 3, 3, 3, 2, 2, 2, 2, 1, 1, 1 };
+// slowed down by a factor of 2 and reduced by ~5px for a jump height of 6
+u8 p_jump_pos[] = { 0, 7, 6, 6, 5, 5, 4, 4, 3, 3, 3, 2, 2, 2, 1, 1, 1 };
 //u8 last_tr;
 
 static u8 mapbuffer[2000]; // Dont forget to use this as general purpose RAM!
@@ -82,46 +85,6 @@ void vblirq()
 }
 
 
-void LoadSID(u8 n_tr, u8 n_sc)
-{
-	u16* clr;
-	u8* dl;
-	u8 i;
-	u8* dest;
-	u16 ii;
-	// Clear the 4kb of SID RAM
-	clr = (u16*)0x1000;
-	for(ii = 0; ii < 0x7ff; ii++)
-		*clr++ = 0x0;
-	// First sector:
-	dl = (u8*)&disk_buffer[0];
-	dest = (u8*)0x1000;
-	LoadSectorFromDisk(1, 0, dl);
-        n_tr = *dl++;
-	n_sc = *dl++;
-	dl = (dl + 0x7c + 2); // discard sector header and SID header
-        for(i = 0; i < 254 - 0x7c - 2; i++) //254 = sector size without header
-        {
-                *dest++ = *dl++;
-        }
-	// Remaining sectors:
-        while(n_tr != 0) 
-        {
-                u8 tb;
-		dl = (u8*)&disk_buffer[0];
-                LoadSectorFromDisk(n_tr, n_sc, dl);
-		n_tr = *dl++;
-		n_sc = *dl++;
-		if(n_tr == 0) tb = n_sc;
-		else tb = 254;
-		for(i = 0; i < tb; i++)
-                {
-                        *dest++ = *dl++;
-                }        
-        }
-
-}
-
 void main()
 {
 	u8 i;
@@ -139,7 +102,7 @@ void main()
 	s8 z;
 
 	timer_a = 0;
-	timer_j = 0;
+	timer_j = 2;
 	p_frame = 0;
 	p_speed = 3;
 	playerFacing = right;
@@ -183,13 +146,13 @@ void main()
 		n_sc = mapbuffer[ii];
 		*dest++ = (n_sc >> 4);
 		*dest++ = (n_sc & 0xf);
-			/*
-			# 4 = >
-			# 1 = ^
-			# 2 = <
-			# 3 = v
-			# 0 = ' '
-			*/
+	/*
+	# 4 = >
+	# 1 = ^
+	# 2 = <
+	# 3 = v
+	# 0 = ' '
+	*/
 	}
 	// just 0 and 2
 	ENABLE_SPRITES(0b00000011);
@@ -225,6 +188,7 @@ void main()
 
 	while(1) 
 	{
+	// MAIN GAME LOOP:
 		// Do nothing until vblank returns 
 		while(!frameFinished){}
 		frameFinished = false;
@@ -232,6 +196,9 @@ void main()
 		  SETBORDER(WHITE);
 		UpdatePlayerState();	
 		POLL_INPUT();
+		if(player_x > 319) player_x = 319;
+		//if(player_y > 199) player_y = 0;
+		
 		
 		  SETBORDER(BLACK);
 		
@@ -239,7 +206,85 @@ void main()
 	// end of main()
 }
 
-bool CheckSpriteBottomCollision(u8 spr_no);
+
+void LoadSID(u8 n_tr, u8 n_sc)
+{
+	u16* clr;
+	u8* dl;
+	u8 i;
+	u8* dest;
+	u16 ii;
+	// Clear the 4kb of SID RAM
+	clr = (u16*)0x1000;
+	for(ii = 0; ii < 0x7ff; ii++)
+		*clr++ = 0x0;
+	// First sector:
+	dl = (u8*)&disk_buffer[0];
+	dest = (u8*)0x1000;
+	LoadSectorFromDisk(1, 0, dl);
+        n_tr = *dl++;
+	n_sc = *dl++;
+	dl = (dl + 0x7c + 2); // discard sector header and SID header
+        for(i = 0; i < 254 - 0x7c - 2; i++) //254 = sector size without header
+        {
+                *dest++ = *dl++;
+        }
+	// Remaining sectors:
+        while(n_tr != 0) 
+        {
+                u8 tb;
+		dl = (u8*)&disk_buffer[0];
+                LoadSectorFromDisk(n_tr, n_sc, dl);
+		n_tr = *dl++;
+		n_sc = *dl++;
+		if(n_tr == 0) tb = n_sc;
+		else tb = 254;
+		for(i = 0; i < tb; i++)
+                {
+                        *dest++ = *dl++;
+                }        
+        }
+
+}
+
+bool CheckPlayerWallCollision(bool right)
+{
+	s8 x, y;
+	u8 c;
+	//u8* cp;
+	x = 0; y = 0;
+	if(right)
+	{
+		x = (u8)((player_x + p_speed) >> 3) - 1;
+		y = ((player_y - 21) >> 3) - 2;
+	}
+	else 
+	{
+		x = (u8)((player_x - 16 - p_speed) >> 3) - 1;
+		y = ((player_y - 21) >> 3) - 2;
+	}
+	if(x < 0) x = 0;
+	if(y < 0) y = 0;
+	c = collisionmask[(y*40) + x]; //SCREENRAM + (y*40) + x;
+	//cp = SCREENRAM + (y*40) + x;
+	//*cp = 1;
+	if(right)
+	{
+		if (c != 0) // wall pushes left or up
+		{
+			player_x = ((x+1) * 8);//1;
+			return true;
+		}
+	}
+	else {
+		if (c != 0)
+		{
+			player_x = ((x+4) * 8);
+			return true;
+		}
+	}
+	return false;
+}
 
 void UpdatePlayerState()
 {
@@ -276,31 +321,19 @@ void UpdatePlayerState()
 			timer_a = 0; 
 		}
 	}
-	// Normal walking speed
-	if(JOY2_STATE & JOYRIGHT) 
-	{
-		if((playerState == falling) || (playerState == jumping)) player_x += p_speed;
-		else {
-			if(CheckSpriteBottomCollision(0)) player_x += p_speed;
-			else playerState = falling;
-		}
-	}
-	else if(JOY2_STATE & JOYLEFT) 
-	{
-		if((playerState == falling) || (playerState == jumping)) player_x -= p_speed;
-		else {
-			if(CheckSpriteBottomCollision(0)) player_x -= p_speed;
-			else playerState = falling;
-		}
-	}
-	
 	// TODO change this set playerState to jumping WHILE its held down
 	if ((JOY2_STATE & JOYUP) && (playerState != jumping) \
-		&& (playerState != falling))
+		&& (playerState != falling) && (jumpReleased == true))
 	{
+		jumpReleased = false;
 		playerState = jumping;
 		timer_j = 0;
 	}
+	if(!(JOY2_STATE & JOYUP) && (jumpReleased == false))
+	{
+		jumpReleased = true;
+	}
+	
 	// Make sure we start off frame-exact
 	if(playerState == running && p_frame == 0) p_frame = 1;
 	// animation ticker for running left/right
@@ -318,6 +351,37 @@ void UpdatePlayerState()
 	{
 		p_frame = 0; // standing=0
 	}
+	// Normal walking speed
+	if(JOY2_STATE & JOYRIGHT) 
+	{
+		if((playerState == falling) || (playerState == jumping)) 
+		{
+			if(!CheckPlayerWallCollision(true)) player_x += p_speed; 
+		}
+		else {
+			if(!CheckSpriteBottomCollision(0)) playerState = falling;
+			else 
+			{
+				if(!CheckPlayerWallCollision(true)) player_x += p_speed;
+			}
+		}
+	}
+	else if(JOY2_STATE & JOYLEFT) 
+	{
+		if((playerState == falling) || (playerState == jumping)) 
+		{
+			if(!CheckPlayerWallCollision(false)) player_x -= p_speed; 
+		}
+		else {
+			if(!CheckSpriteBottomCollision(0)) playerState = falling;
+			else 
+			{
+				if(!CheckPlayerWallCollision(false)) player_x -= p_speed;
+			}
+		}
+	}
+	
+	
 	if (playerState == jumping)
 	{
 		// JUMPING POSITION!
@@ -359,41 +423,26 @@ bool CheckSpriteBottomCollision(u8 spr_no)
 	// +1, and +2. 
 	if ( *(u8*)(0xd010) & (1 << spr_no) )
 		x += 256;
-	x = (x >> 3) - 1;
-	// sprite facing: am I the player?
-	if(playerFacing == right) x -= 1; // fix?
+	x = ((x-8) >> 3) - 1;
+	// sprite facing: am I the player? (FIXME)
 	y = (y >> 3) - 1;
 	if(collisionmask[(y*40)+x] == FLOOR_COLLISION) {
-		//SetSpritePosition(spr_no, x*8, (y-1)*8);
 		// am I the player?
 		player_y = ((y + 1)*8) + 21;
 		return 1;
 	}
-	else {
-		return 0;
+	x++;
+	if(collisionmask[(y*40)+x] == FLOOR_COLLISION) {
+		player_y = ((y + 1)*8) + 21;
+		return 1;
 	}
-}
-
-// Standard load file from disk code 
-void LoadDiskFile(u8 n_tr, u8 n_sc, u8* dest)
-{
-	u8* dl;
-	u8 i;
-	u8 tb;
-	tb = 0;
-	while(n_tr != 0)
-	{
-		dl = (u8*)&disk_buffer[0];
-                LoadSectorFromDisk(n_tr, n_sc, (u8*)dl); // store it in buffer 1st
-		n_tr = *dl++;
-		n_sc = *dl++; // header = next track/sector
-		if(n_tr == 0) {
-			tb = n_sc; }
-		else { tb = 254; }
-                for(i = 0; i < tb; i++)
-                { 	// copy rest from buffer to destination
-                        *dest++ = *dl++;
-                }  
+	else {
+		if(playerState != falling) // FIRST FRAME FALLING?
+		{
+			//so adjust my pos
+			player_x = (x + 2)*8;
+		}
+		return 0;
 	}
 }
 

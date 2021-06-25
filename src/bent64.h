@@ -29,6 +29,7 @@ void SetSpritePointer(u8 sprNo, u8 ptr);
 void LoadSectorFromDisk(u8 trackNo, u8 secNo, u8* tgt);
 void byteToString(u8 byte, u8* arr);
 void setup_irq(void* interrupt, u8 scanline);
+void LoadDiskFile(u8 n_tr, u8 n_sec, u8* dest);
 
 static unsigned char globalSubA, globalSubB;
 static unsigned int globalSubC, globalSubD;
@@ -417,5 +418,30 @@ void LoadSectorFromDisk(u8 trackNo, u8 secNo, u8* tgt)
 	print(&errorString, sizeof(errorString)-1, 5, 5, RED);
 	goto CLOSEFL;
 }
+
+static u8 disk_buffer[256];
+// Standard load file from disk code 
+void LoadDiskFile(u8 n_tr, u8 n_sc, u8* dest)
+{
+	u8* dl;
+	u8 i;
+	u8 tb;
+	tb = 0;
+	while(n_tr != 0)
+	{
+		dl = (u8*)&disk_buffer[0];
+                LoadSectorFromDisk(n_tr, n_sc, (u8*)dl); // store it in buffer 1st
+		n_tr = *dl++;
+		n_sc = *dl++; // header = next track/sector
+		if(n_tr == 0) {
+			tb = n_sc; }
+		else { tb = 254; }
+                for(i = 0; i < tb; i++)
+                { 	// copy rest from buffer to destination
+                        *dest++ = *dl++;
+                }  
+	}
+}
+
 
 #endif
