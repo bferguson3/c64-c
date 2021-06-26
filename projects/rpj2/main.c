@@ -6,14 +6,14 @@
 //
 void UpdatePlayerState();
 void vblirq();
-
+void GunMaintenance();
 bool CheckSpriteBottomCollision(u8 spr_no);
 void LoadSID(u8 n_tr, u8 n_sc);
 
 //
 const u8 teststr[] = "loading";
 
-enum pstate { standing, starting, running, jumping, falling };
+enum pstate { standing, starting, running, jumping, falling, reloading };
 enum pstate playerState;
 enum pfacing { left, right };
 enum pfacing playerFacing;
@@ -59,17 +59,27 @@ void vblirq()
 		(u8)(player_y));
 	SetSpritePosition(1, player_x + spa_o, \
 		player_y);
-
+#define PLAYER_BASE 128
 	// Set the animation frame
-	if((playerState != jumping) && (playerState != falling))
+	if((playerState != jumping) && (playerState != falling) \
+	&& (playerState != reloading))
 	{
-		SetSpritePointer(0, 128 + p_anm_frames[p_frame] + f_o);
-		SetSpritePointer(1, 138 + p_anm_frames[p_frame] + f_o);
+		SetSpritePointer(0, PLAYER_BASE + p_anm_frames[p_frame] + f_o);
+		SetSpritePointer(1, PLAYER_BASE + 10 + p_anm_frames[p_frame] + f_o);
+	}
+	else if(playerState == reloading)
+	{
+		if(playerFacing == left)
+		{
+			j_ofs = 1;
+		}
+		SetSpritePointer(1, 22 + PLAYER_BASE + j_ofs);
+		SetSpritePointer(0, 24 + PLAYER_BASE + j_ofs);
 	}
 	else 
 	{ 
-		SetSpritePointer(0, 128 + 4 + f_o);
-		SetSpritePointer(1, 138 + 4 + f_o);
+		SetSpritePointer(0, PLAYER_BASE + 4 + f_o);
+		SetSpritePointer(1, PLAYER_BASE + 10 + 4 + f_o);
 	}
 	
 	  SETBORDER(BLACK);
@@ -84,6 +94,98 @@ void vblirq()
 	return_irq;
 }
 
+static bool fireReleased = true; // did we release the joy button?
+static bool p_Reloaded = true; // have we reloaded?
+// the entire time p_Reloaded is false, we need to be trying to reload. 
+static bool justFired = false; // for flash effect
+s8 gunFlashCtr = 0; 	// for the flash effect
+s8 waitToReload = 15;   // 15 frames until we can reload
+bool reloadAnimPlaying = false; // 15 frames of reloading
+
+void FireGun()
+{
+	if(playerFacing == right){
+		SetSpritePointer(2, 148);
+		SetSpritePosition(2, player_x+21, player_y+3);
+	}
+	else {
+		SetSpritePointer(2, 149);
+		SetSpritePosition(2, player_x-29, player_y+3);
+	}
+	SPRITECOLOR_2(WHITE);
+	justFired = true;
+	p_Reloaded = false;
+	fireReleased = false;
+}
+
+void GunMaintenance()
+{
+	if(justFired)
+	{
+		gunFlashCtr++;
+		if(gunFlashCtr == 1)
+		{
+			ENABLE_SPRITES(0b11111011);
+		}
+		else if(gunFlashCtr == 2)
+		{
+			ENABLE_SPRITES(0b11111111);
+		}
+		else if(gunFlashCtr > 2)
+		{
+			gunFlashCtr = 0;
+			justFired = false;
+			SetSpritePosition(2, 0, 0);
+		}
+	}
+	else 
+	{ 
+		if(!p_Reloaded)
+		{
+			if(!reloadAnimPlaying)
+			{
+				waitToReload--;
+				if(waitToReload < 0) {
+					waitToReload = 15;
+					reloadAnimPlaying = true;
+				}
+			}
+			else
+			{	// only change to reload animation and tick
+				// down waitToReload if we are standing still
+				if(!(JOY2_STATE & 0b00001111)\
+				  && (playerState == standing)) 
+				{
+					reloadAnimPlaying = true;
+					playerState = reloading;
+					//SetSpritePointer(0, 149);
+					//SetSpritePointer(1, 151);
+					waitToReload--;
+					
+				}
+				if(playerState == reloading)
+				{
+					waitToReload--;
+					if(waitToReload < 0)
+					{
+						waitToReload = 15;
+						reloadAnimPlaying = false;
+						p_Reloaded = true;
+						playerState = standing;
+					}
+				}
+			}
+		}
+	}
+	if((JOY2_STATE & JOYBTN) && (fireReleased) && (p_Reloaded))
+	{
+		FireGun();
+	}
+	if(!(JOY2_STATE & JOYBTN) && (!fireReleased))
+	{
+		fireReleased = true;
+	}
+}
 
 void main()
 {
@@ -123,7 +225,7 @@ void main()
 	LoadSID(1, 0); // sid is at track 1, sector 0
 
 	dest = (u8*)&mapbuffer;
-	LoadDiskFile(1, 1, (u8*)dest); // map1.rle @ 1,1
+	LoadDiskFile(1, 2, (u8*)dest); // map1.rle @ 1,1
 	// Load in uncompressed map
 	ii = 0;
 	dl = SCREENRAM;
@@ -155,7 +257,7 @@ void main()
 	*/
 	}
 	// just 0 and 2
-	ENABLE_SPRITES(0b00000011);
+	ENABLE_SPRITES(0b11111111);
 	SET_MCSPRITES(0)
 	// Hero:
 	SetSpritePointer(0, 128);
@@ -194,11 +296,12 @@ void main()
 		frameFinished = false;
 		
 		  SETBORDER(WHITE);
-		UpdatePlayerState();	
+		
+		UpdatePlayerState();
+		GunMaintenance();
 		POLL_INPUT();
 		if(player_x > 319) player_x = 319;
 		//if(player_y > 199) player_y = 0;
-		
 		
 		  SETBORDER(BLACK);
 		
@@ -290,6 +393,7 @@ void UpdatePlayerState()
 {
 // PLAYER STATE CONTROL 
 //
+	if(playerState == reloading) goto _reloading;
 	// Turn / run left or right
 	if((JOY2_STATE & JOYRIGHT) \
 	&& (playerState != jumping)\
@@ -321,7 +425,7 @@ void UpdatePlayerState()
 			timer_a = 0; 
 		}
 	}
-	// TODO change this set playerState to jumping WHILE its held down
+    	// TODO change this set playerState to jumping WHILE its held down
 	if ((JOY2_STATE & JOYUP) && (playerState != jumping) \
 		&& (playerState != falling) && (jumpReleased == true))
 	{
@@ -333,7 +437,6 @@ void UpdatePlayerState()
 	{
 		jumpReleased = true;
 	}
-	
 	// Make sure we start off frame-exact
 	if(playerState == running && p_frame == 0) p_frame = 1;
 	// animation ticker for running left/right
@@ -362,7 +465,8 @@ void UpdatePlayerState()
 			if(!CheckSpriteBottomCollision(0)) playerState = falling;
 			else 
 			{
-				if(!CheckPlayerWallCollision(true)) player_x += p_speed;
+				if(!CheckPlayerWallCollision(true)) \
+					player_x += p_speed;
 			}
 		}
 	}
@@ -376,7 +480,8 @@ void UpdatePlayerState()
 			if(!CheckSpriteBottomCollision(0)) playerState = falling;
 			else 
 			{
-				if(!CheckPlayerWallCollision(false)) player_x -= p_speed;
+				if(!CheckPlayerWallCollision(false)) \
+					player_x -= p_speed;
 			}
 		}
 	}
@@ -394,12 +499,18 @@ void UpdatePlayerState()
 	// and when falling, set position to y - j_pos_arr
 	else if (playerState == falling)
 	{
-		if(!CheckSpriteBottomCollision(0)) player_y += p_jump_pos[timer_j];
-		else playerState = standing;
+		if(!CheckSpriteBottomCollision(0)) {
+			player_y += p_jump_pos[timer_j];
+		}
+		else {
+			playerState = standing;
+		}
 		timer_j--;
 		if(timer_j == 2) timer_j = 3;
 	}
 	// add 5 for left facing sprites
+_reloading:
+	
 	if ( playerFacing == left ) {
 		f_o = 5;
 		spa_o = -8;
