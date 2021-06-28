@@ -1,45 +1,42 @@
 // main.c
 
+
 #include "bent64.h"
 #include "gfx.h"
-
+u16 ii;
+u8* dest;
 //
-void UpdatePlayerState();
 void vblirq();
-void GunMaintenance();
-bool CheckSpriteBottomCollision(u8 spr_no);
 void LoadSID(u8 n_tr, u8 n_sc);
+void LoadMap(u8 tr, u8 sec);
+void DrawEnemies();
 
 //
-const u8 teststr[] = "loading";
+const u8 teststr[] = "loading...";
 
-enum pstate { standing, starting, running, jumping, falling, reloading };
-enum pstate playerState;
-enum pfacing { left, right };
-enum pfacing playerFacing;
 
-u8 timer_a;
-u8 p_frame;
-u8 p_speed;
-u8 timer_j;
-u16 player_x = 100;
-u8 player_y = 20;
-bool jumpReleased = true;
-static u8 f_o;
-static s8 spa_o = 0;
-u8 p_anm_frames[] = { 0, 1, 2, 3, 4, 3 };
-//u8 p_jump_pos[] = { 0, 13, 24, 33, 40, 47, 52, 56, 60, 62 }; < px offset
-// slowed down by a factor of 2 and reduced by ~5px for a jump height of 6
-u8 p_jump_pos[] = { 0, 7, 6, 6, 5, 5, 4, 4, 3, 3, 3, 2, 2, 2, 1, 1, 1 };
-//u8 last_tr;
-
+// mappy stuff
 static u8 mapbuffer[2000]; // Dont forget to use this as general purpose RAM!
 static u8 collisionmask[1000]; // 1500-1999 decompressed (0-15)
 
-bool frameFinished = false;
+// Player!
+#include "player.h"
+
+bool frameFinished = false; // for vsync
+
+enum enemyState { patrolling, aiming, firing, injured };
+// enemy stuff
+static struct Enemy {
+	u16 x;
+	u8 y;
+	u8 e_type;
+	u8 sprite_id;
+	enum enemyState state;
+} enemies[8];
 
 void vblirq()
 {
+	
 	u8 j_ofs = 0;
 	asm("pha \
 	txa \
@@ -81,47 +78,8 @@ void vblirq()
 		SetSpritePointer(0, PLAYER_BASE + 4 + f_o);
 		SetSpritePointer(1, PLAYER_BASE + 10 + 4 + f_o);
 	}
-	
-	  SETBORDER(BLACK);
-	frameFinished = true;
-	
-	// RETURN FROM INTERRUPT
-	asm("pla \
-	tay \
-	pla \
-	tax \
-	pla");
-	return_irq;
-}
-
-static bool fireReleased = true; // did we release the joy button?
-static bool p_Reloaded = true; // have we reloaded?
-// the entire time p_Reloaded is false, we need to be trying to reload. 
-static bool justFired = false; // for flash effect
-s8 gunFlashCtr = 0; 	// for the flash effect
-s8 waitToReload = 15;   // 15 frames until we can reload
-bool reloadAnimPlaying = false; // 15 frames of reloading
-
-void FireGun()
-{
-	if(playerFacing == right){
-		SetSpritePointer(2, 148);
-		SetSpritePosition(2, player_x+21, player_y+3);
-	}
-	else {
-		SetSpritePointer(2, 149);
-		SetSpritePosition(2, player_x-29, player_y+3);
-	}
-	SPRITECOLOR_2(WHITE);
-	justFired = true;
-	p_Reloaded = false;
-	fireReleased = false;
-}
-
-void GunMaintenance()
-{
-	if(justFired)
-	{
+	// Gun muzzle flash
+	if(justFired) {
 		gunFlashCtr++;
 		if(gunFlashCtr == 1)
 		{
@@ -138,94 +96,41 @@ void GunMaintenance()
 			SetSpritePosition(2, 0, 0);
 		}
 	}
-	else 
-	{ 
-		if(!p_Reloaded)
-		{
-			if(!reloadAnimPlaying)
-			{
-				waitToReload--;
-				if(waitToReload < 0) {
-					waitToReload = 15;
-					reloadAnimPlaying = true;
-				}
-			}
-			else
-			{	// only change to reload animation and tick
-				// down waitToReload if we are standing still
-				if(!(JOY2_STATE & 0b00001111)\
-				  && (playerState == standing)) 
-				{
-					reloadAnimPlaying = true;
-					playerState = reloading;
-					//SetSpritePointer(0, 149);
-					//SetSpritePointer(1, 151);
-					waitToReload--;
-					
-				}
-				if(playerState == reloading)
-				{
-					waitToReload--;
-					if(waitToReload < 0)
-					{
-						waitToReload = 15;
-						reloadAnimPlaying = false;
-						p_Reloaded = true;
-						playerState = standing;
-					}
-				}
-			}
-		}
-	}
-	if((JOY2_STATE & JOYBTN) && (fireReleased) && (p_Reloaded))
-	{
-		FireGun();
-	}
-	if(!(JOY2_STATE & JOYBTN) && (!fireReleased))
-	{
-		fireReleased = true;
-	}
+	DrawEnemies();
+	
+	  SETBORDER(BLACK);
+	frameFinished = true;
+	
+	// RETURN FROM INTERRUPT
+	asm("pla \
+	tay \
+	pla \
+	tax \
+	pla");
+	return_irq;
 }
-
-void main()
+s8 enemycount;
+// Decompress collision mask to collisionmask[]
+/*# 4 = >
+# 1 = ^
+# 2 = <
+# 3 = v
+# 0 = ' '*/
+void LoadMap(u8 tr, u8 sec)
 {
-	u8 i;
-	u8 pw;
-	u16 ii;
-	u8* dest;
+
 	u8* dl;
-	u8* cl;
 	u8 n_sc;// = 0;
 	u8 n_tr;// = 0;	
-	u16* clr;
-	u16 len;
-	u8 tcp;
-	u8 n;
-	s8 z;
-
-	timer_a = 0;
-	timer_j = 2;
-	p_frame = 0;
-	p_speed = 3;
-	playerFacing = right;
-	//playerState = standing;
+	u8 e;
+	u8 ey;
+	u16 ex;
+	u16 o;
 	
-	k_CLS()
-	SETBACKGROUND(BLACK);
-
-	CHARSET_B()	
-	print(&teststr, sizeof(teststr)-1, 0, 0, LIGHTGREY);
-
-	// clean mapbuffer
-	for(ii = 0; ii < 2000; ii++)
-	{
-		mapbuffer[ii] = 0x0;
-	}
-
-	LoadSID(1, 0); // sid is at track 1, sector 0
-
+	enemycount = 0;
+		
 	dest = (u8*)&mapbuffer;
-	LoadDiskFile(1, 2, (u8*)dest); // map1.rle @ 1,1
+	LoadDiskFile(tr, sec, (u8*)dest); // map1.rle @ 1,1
 	// Load in uncompressed map
 	ii = 0;
 	dl = SCREENRAM;
@@ -240,25 +145,101 @@ void main()
 		*dl++ = mapbuffer[ii] >> 4;
 		*dl++ = mapbuffer[ii];
 	}
-	// Decompress collision mask to collisionmask[]
-	dl = SCREENRAM;
+
+	//dl = SCREENRAM;
 	dest = (u8*)&collisionmask[0];
+	//e_ct = 3;
 	for(; ii < 2000; ii++)
 	{
 		n_sc = mapbuffer[ii];
-		*dest++ = (n_sc >> 4);
-		*dest++ = (n_sc & 0xf);
-	/*
-	# 4 = >
-	# 1 = ^
-	# 2 = <
-	# 3 = v
-	# 0 = ' '
-	*/
+		if((n_sc == 5) || (n_sc == (5<<4)))
+		{	
+			o = (ii - 1500) * 2; // 0-499 = 0-998
+			ey = (u8)(o / 40) + 2; //17
+			ex = (o % 40) + 1;
+			e = n_sc;
+			if (e > 15) e = (e >> 4);
+			enemies[(u8)enemycount].e_type = e;
+			enemies[(u8)enemycount].x = (u16)(ex * 8) + 12;
+			enemies[(u8)enemycount].y = (u8)(ey * 8) + 21;
+			enemycount++;
+			dest+=2; //dl+=2;
+		}
+		else
+		{
+			*dest++ = (n_sc >> 4);
+			*dest++ = (n_sc & 0xf);
+			//*dl++ = (n_sc >> 4);
+			//*dl++ = (n_sc & 0xf);
+			
+		}
 	}
-	// just 0 and 2
+}
+
+void DrawEnemies()
+{
+	u8 jj;
+	
+	  // TODO FIXME THIS IS SLOW! FLUSH ENEMY SPRITES ALL AT ONCE!
+	for(jj = 4; jj < 8; jj++)
+	{
+		u8 ne;
+		ne = jj-4;
+		SETBORDER(BLUE);
+		SetSpritePosition(jj, \
+			(u16)(enemies[ne].x), \
+			(u8)(enemies[ne].y)\
+		); 
+		SETBORDER(RED);
+		SetSpritePointer(jj, 154);
+	}
+
+}
+
+const u8 htxt[] = "HELLTH \xe7\xe7\xe7       ";
+const u8 gtxt[] = "GUNN \xe7  ";
+
+void main()
+{
+	u16 ii;
+	u8 i;
+	u8 pw;
+	u8* cl;
+	u16* clr;
+	u16 len;
+	u8 tcp;
+	u8 n;
+	s8 z;
+
+	timer_a = 0;
+	timer_j = 2;
+	p_frame = 0;
+	p_speed = 3;
+	playerFacing = right;
+	//playerState = standing;
+	
+	k_CLS();
+	SETBACKGROUND(BLACK);
+	SETBORDER(BLACK);
+	CHARSET_B();	// lowercase and petscii
+	print(&teststr, sizeof(teststr)-1, 0, 0, LIGHTGREY); // "loading..."
+
+	// clean mapbuffer
+	for(ii = 0; ii < 2000; ii++)
+	{
+		mapbuffer[ii] = 0x0;
+	}
+
+	LoadSID(1, 0); // sid is at track 1, sector 0
+
+	// LOAD THAT MAP BOY
+	//for(n = 4; n < 8; n++) SetSpritePosition(n, 0, 0);
+	LoadMap(1, 2);
+
 	ENABLE_SPRITES(0b11111111);
-	SET_MCSPRITES(0)
+	n = 0;
+	
+	SET_MCSPRITES(0b11110000);
 	// Hero:
 	SetSpritePointer(0, 128);
 	SetSpritePosition(0, 90, 90);
@@ -266,6 +247,12 @@ void main()
 	SetSpritePointer(1, 138);
 	SetSpritePosition(1, 90, 90);
 	SPRITECOLOR_1(RED);
+	
+	// WHITE and BLUE MC colors
+	asm("lda #1 \
+	sta $d025 \
+	lda #6 \
+	sta $d026 ");
 
 	// Set: Only 'safe' kb keys as readable, support joy 1 + 2.
 	// JOY1 <-> KB (either or)
@@ -276,7 +263,7 @@ void main()
 	sta $dc03 ");
 	
 	// enable vblank
-	setup_irq(&vblirq, 0);
+	setup_irq(&vblirq, 226);
 
 	// Start music
 #define C_MUSIC_INIT 0x1000
@@ -286,13 +273,21 @@ void main()
         jsr %w", C_MUSIC_INIT);
 
 	// set player to falling
-	playerState = falling;
-
+	playerState = jumping;
+	
+	print(&htxt[0], sizeof(htxt)-1, 0, 23, LIGHTGREEN); // "loading..."
+	print(&gtxt[0], sizeof(gtxt)-1, 18, 23, RED);
+	// enemy data from collision map:
+	//101 = enemy 1 (snake)
+	
 	while(1) 
 	{
 	// MAIN GAME LOOP:
 		// Do nothing until vblank returns 
-		while(!frameFinished){}
+		while(!frameFinished)
+		{
+			// wait until vblank is done
+		}
 		frameFinished = false;
 		
 		  SETBORDER(WHITE);
@@ -301,7 +296,6 @@ void main()
 		GunMaintenance();
 		POLL_INPUT();
 		if(player_x > 319) player_x = 319;
-		//if(player_y > 199) player_y = 0;
 		
 		  SETBORDER(BLACK);
 		
@@ -349,214 +343,6 @@ void LoadSID(u8 n_tr, u8 n_sc)
         }
 
 }
-
-bool CheckPlayerWallCollision(bool right)
-{
-	s8 x, y;
-	u8 c;
-	//u8* cp;
-	x = 0; y = 0;
-	if(right)
-	{
-		x = (u8)((player_x + p_speed) >> 3) - 1;
-		y = ((player_y - 21) >> 3) - 2;
-	}
-	else 
-	{
-		x = (u8)((player_x - 16 - p_speed) >> 3) - 1;
-		y = ((player_y - 21) >> 3) - 2;
-	}
-	if(x < 0) x = 0;
-	if(y < 0) y = 0;
-	c = collisionmask[(y*40) + x]; //SCREENRAM + (y*40) + x;
-	//cp = SCREENRAM + (y*40) + x;
-	//*cp = 1;
-	if(right)
-	{
-		if (c != 0) // wall pushes left or up
-		{
-			player_x = ((x+1) * 8);//1;
-			return true;
-		}
-	}
-	else {
-		if (c != 0)
-		{
-			player_x = ((x+4) * 8);
-			return true;
-		}
-	}
-	return false;
-}
-
-void UpdatePlayerState()
-{
-// PLAYER STATE CONTROL 
-//
-	if(playerState == reloading) goto _reloading;
-	// Turn / run left or right
-	if((JOY2_STATE & JOYRIGHT) \
-	&& (playerState != jumping)\
-	&& (playerState != falling))
-	{
-		if(playerFacing == left)
-		{
-			playerFacing = right;
-			playerState = starting;
-		}
-		else playerState = running;	
-	}
-	else if((JOY2_STATE & JOYLEFT) \
-		&& (playerState != jumping)\
-		&& (playerState != falling))
-	{
-		if(playerFacing == right)
-		{
-			playerFacing = left;
-			playerState = starting;
-		}
-		else playerState = running;
-	}
-	else
-	{	// if not left or right, make standing
-		if((playerState != jumping) && (playerState != falling))
-		{
-			playerState = standing;
-			timer_a = 0; 
-		}
-	}
-    	// TODO change this set playerState to jumping WHILE its held down
-	if ((JOY2_STATE & JOYUP) && (playerState != jumping) \
-		&& (playerState != falling) && (jumpReleased == true))
-	{
-		jumpReleased = false;
-		playerState = jumping;
-		timer_j = 0;
-	}
-	if(!(JOY2_STATE & JOYUP) && (jumpReleased == false))
-	{
-		jumpReleased = true;
-	}
-	// Make sure we start off frame-exact
-	if(playerState == running && p_frame == 0) p_frame = 1;
-	// animation ticker for running left/right
-	if( (playerState == starting) || (playerState == running) )
-	{
-		timer_a++;
-		if(timer_a > 4)
-		{
-			timer_a = 0;
-			p_frame++;
-			if(p_frame > 5) p_frame = 2;
-		}
-	}
-	else if (playerState == standing)
-	{
-		p_frame = 0; // standing=0
-	}
-	// Normal walking speed
-	if(JOY2_STATE & JOYRIGHT) 
-	{
-		if((playerState == falling) || (playerState == jumping)) 
-		{
-			if(!CheckPlayerWallCollision(true)) player_x += p_speed; 
-		}
-		else {
-			if(!CheckSpriteBottomCollision(0)) playerState = falling;
-			else 
-			{
-				if(!CheckPlayerWallCollision(true)) \
-					player_x += p_speed;
-			}
-		}
-	}
-	else if(JOY2_STATE & JOYLEFT) 
-	{
-		if((playerState == falling) || (playerState == jumping)) 
-		{
-			if(!CheckPlayerWallCollision(false)) player_x -= p_speed; 
-		}
-		else {
-			if(!CheckSpriteBottomCollision(0)) playerState = falling;
-			else 
-			{
-				if(!CheckPlayerWallCollision(false)) \
-					player_x -= p_speed;
-			}
-		}
-	}
-	
-	
-	if (playerState == jumping)
-	{
-		// JUMPING POSITION!
-		timer_j ++ ;
-		if(timer_j > sizeof(p_jump_pos)) playerState = falling;
-	}
-	// TODO 
-	// continue to 'jump' while the button is held down.
-	// if its released, set timer_j to 0,
-	// and when falling, set position to y - j_pos_arr
-	else if (playerState == falling)
-	{
-		if(!CheckSpriteBottomCollision(0)) {
-			player_y += p_jump_pos[timer_j];
-		}
-		else {
-			playerState = standing;
-		}
-		timer_j--;
-		if(timer_j == 2) timer_j = 3;
-	}
-	// add 5 for left facing sprites
-_reloading:
-	
-	if ( playerFacing == left ) {
-		f_o = 5;
-		spa_o = -8;
-	}
-	else {
-		f_o = 0;
-		spa_o = 0;
-	}
-}
-
-#define FLOOR_COLLISION 1
-
-bool CheckSpriteBottomCollision(u8 spr_no)
-{
-	u8 y;
-	u16 x;
-	u8* dr;
-	x = *(u8*)(0xd000 + (spr_no*2));
-	y = *(u8*)(0xd001 + (spr_no*2)) - 21; // sprites are 24x21 px
-	// we only need to check the tile below,
-	// +1, and +2. 
-	if ( *(u8*)(0xd010) & (1 << spr_no) )
-		x += 256;
-	x = ((x-8) >> 3) - 1;
-	// sprite facing: am I the player? (FIXME)
-	y = (y >> 3) - 1;
-	if(collisionmask[(y*40)+x] == FLOOR_COLLISION) {
-		// am I the player?
-		player_y = ((y + 1)*8) + 21;
-		return 1;
-	}
-	x++;
-	if(collisionmask[(y*40)+x] == FLOOR_COLLISION) {
-		player_y = ((y + 1)*8) + 21;
-		return 1;
-	}
-	else {
-		if(playerState != falling) // FIRST FRAME FALLING?
-		{
-			//so adjust my pos
-			player_x = (x + 2)*8;
-		}
-		return 0;
-	}
-}
-
 
 ///////////////////////////////////////////
 

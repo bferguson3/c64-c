@@ -166,10 +166,10 @@ def GetNumSecs(tr):
     else:
         return 17
 
-def GetFirstEmpty():
+def GetFirstEmpty(startsec = 0):
     global ds
     tr_, se_ = 0, 0
-    r = 0
+    r = startsec * 256
     while r < len(ds):
         if(ds[r] == 0):
             if(ds[r+1] == 0):
@@ -407,10 +407,14 @@ if mode == ADD_FILE:
     f_ofs += 2
     i = 2
     while j < len(infile):
+        #print(j, f_ofs+j)
         ds[f_ofs+j] = infile[j]
         i += 1
         if(i > 255):
             f_ofs += (256*(interleave-1)) # skip sectors
+            # TODO f_ofs needs to wrap around if its over the limit
+            #if((f_ofs+j) > 174848):
+            #    f_ofs -= 174848
             f_ofs += 2 # skip header
             i = 2
         j += 1
@@ -425,6 +429,9 @@ if mode == ADD_FILE:
         # for every used sector, tick thru the bam
         ds = TickBam(ds, ss) # and write the track headers
         ss += interleave
+        #if((ss > 650)):
+        #    ss -= 650
+        #    print(ss)
         i -= 1
     ds = TickBam(ds, ss, True) #final sector 
     
@@ -434,6 +441,8 @@ if mode == ADD_FILE:
     f = open(dn,'wb')
     b = 0
     while b < len(ds):
+        #if(ds[b] == -1): # if the byte conversion fails...?
+        #    ds[b] = 0
         f.write(bytes([ds[b]]))
         b += 1
     f.close()

@@ -92,6 +92,9 @@ if cmask:
                                 ob = ob + '3'
                         elif (mask[(i*2)+b] == 62): # >
                                 ob = ob + '4'
+                        elif (mask[(i*2)+b] == 101): #enemy 1
+                                ob = ob + '5'
+                                print('enemy fond')
                         else:
                                 ob = ob + '0'
                         #if(mask[(i*8)+b] != 160):

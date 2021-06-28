@@ -28,7 +28,7 @@ void SetSpritePosition(u8 sprNo, u16 x, u8 y);
 void SetSpritePointer(u8 sprNo, u8 ptr);
 void LoadSectorFromDisk(u8 trackNo, u8 secNo, u8* tgt);
 void byteToString(u8 byte, u8* arr);
-void setup_irq(void* interrupt, u8 scanline);
+void setup_irq(void* interrupt, u16 scanline);
 void LoadDiskFile(u8 n_tr, u8 n_sec, u8* dest);
 
 static unsigned char globalSubA, globalSubB;
@@ -166,7 +166,7 @@ static u8 JOY2_STATE = 0;
 #define JOYBTN (1<<4)
 
 
-void setup_irq(void* interrupt, u8 scanline)
+void setup_irq(void* interrupt, u16 scanline)
 {
 	globalSubA = (u16)(interrupt) >> 8;
 	globalSubB = (u16)(interrupt) & 0xff;
@@ -182,7 +182,22 @@ void setup_irq(void* interrupt, u8 scanline)
 	sta $d01a"); // turn off timers and set raster irqs
 	asm("lda #$1b \
 	sta $d011 ");//<- screen control
-	globalSubC = scanline;
+	globalSubC = scanline & 0xff;
+	/*
+	if(scanline > 0xff)
+	{
+		asm("lda $d011 \
+		and #$7f \
+		ora #$80 \
+		sta $d011");
+	}
+	else 
+	{
+		asm("lda $d011 \
+		and #$7f \
+		sta $d011");
+	}
+	*/
 	asm("lda %v", globalSubC);
 	asm("sta $d012"); // IRQ raster loc
 	asm("lda $dc0d \
@@ -213,9 +228,9 @@ void SetSpritePosition(u8 sprNo, u16 x, u8 y)
 {
 	u8* yl;
 	yl = (u8*)(0xd000 + (sprNo * 2)); // X1,Y1,X2,Y2...
-	*yl++ = x & 0xff;
+	*yl++ = (u8)(x & 0xff);
 	*yl = y;
-	if(x & 0x100)
+	if(x > 0xff)
 	{
 		globalSubA = 1 << sprNo;
 		asm("lda $d010");
@@ -235,12 +250,14 @@ void SetSpritePosition(u8 sprNo, u16 x, u8 y)
 static u8 g_charsetMode; 
 void print(const u8* a, u8 len, u8 x, u8 y, u8 color)
 {
-	volatile unsigned char* scp;
-	volatile u8* cpr;
+	unsigned char* scp;
+	u8* cpr;
 	u8 i;
 	u8 c;
-	scp = SCREENRAM + x + (y*40);
-	cpr = COLORRAM + x + (y*40);
+	
+	scp = (u8*)(SCREENRAM + x + (y*40));
+	cpr = (u8*)(COLORRAM + x + (y*40));
+	
 	if(g_charsetMode == 0)
 	{
 
