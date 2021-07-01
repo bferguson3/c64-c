@@ -21,16 +21,23 @@ static u8 collisionmask[1000]; // 1500-1999 decompressed (0-15)
 
 // Player!
 #include "player.h"
+static s8 playerHealth = 3;
+
 
 bool frameFinished = false; // for vsync
+static bool oddFrame;
 
 enum enemyState { patrolling, aiming, firing, injured };
 // enemy stuff
 static struct Enemy {
 	u16 x;
 	u8 y;
-	u8 e_type;
 	u8 sprite_id;
+	u8 base_sprite;
+	u8 e_type;
+	s8 health;
+	s8 timer; // used for all animation cooldowns
+	bool facingRight;
 	enum enemyState state;
 } enemies[8];
 
@@ -44,11 +51,13 @@ void vblirq()
 	tya \
 	pha");
 	
-	  SETBORDER(RED);
+	  SETBORDER(LIGHTRED);
 
 	// Play music!
 #define C_MUSIC_PLAY 0x1003
         asm("jsr %w", C_MUSIC_PLAY);
+
+	  SETBORDER(RED);
 
 	// Set player sprites 0 and 1 position
 	if(playerState == jumping) player_y -= p_jump_pos[timer_j];
@@ -162,6 +171,15 @@ void LoadMap(u8 tr, u8 sec)
 			enemies[(u8)enemycount].e_type = e;
 			enemies[(u8)enemycount].x = (u16)(ex * 8) + 12;
 			enemies[(u8)enemycount].y = (u8)(ey * 8) + 21;
+			enemies[(u8)enemycount].timer = 10;
+			enemies[(u8)enemycount].state = patrolling;
+#define SNAKEMONSTER_ID 5
+			switch(e){
+				case SNAKEMONSTER_ID:
+					enemies[(u8)enemycount].base_sprite = 154;
+					enemies[(u8)enemycount].sprite_id = 154;
+				break;
+			}
 			enemycount++;
 			dest+=2; //dl+=2;
 		}
@@ -175,42 +193,144 @@ void LoadMap(u8 tr, u8 sec)
 		}
 	}
 }
+#define ReHigh(s) globalSubA = (1 << (s));\
+	asm("lda $d010 \
+	ora %v", globalSubA);\
+	asm("sta $d010");
+#define UnHigh(s) globalSubA = ~(1 << (s));\
+	asm("lda $d010 \
+	and %v", globalSubA);\
+	asm("sta $d010");
 
 void DrawEnemies()
 {
 	u8 jj;
-	
-	  // TODO FIXME THIS IS SLOW! FLUSH ENEMY SPRITES ALL AT ONCE!
-	for(jj = 4; jj < 8; jj++)
-	{
-		u8 ne;
-		ne = jj-4;
-		SETBORDER(BLUE);
-		SetSpritePosition(jj, \
-			(u16)(enemies[ne].x), \
-			(u8)(enemies[ne].y)\
-		); 
-		SETBORDER(RED);
-		SetSpritePointer(jj, 154);
-	}
+	u8 ne;
+	u8* v;
+	u8* sprlo;
+	u8* sprpt;
+	/*
+	Enemy = {
+	u16 x;
+	u8 y;
+	u8 sprite_id;
+	u8 e_type;
+	s8 health;
+	s8 timer;
+	bool facingRight;
+	enum enemyState state;
+	*/
+	SETBORDER(BLUE);
 
+	sprlo = (u8*)0xd008;
+	sprpt = (u8*)0x7fc; // sprite 04
+	if(oddFrame) ne = 0;
+	else {
+		ne = 2;
+		sprlo += 4;
+		sprpt += 2;
+	}
+	v = (u8*)(&enemies[ne]);	// enemy A
+	ne += 4; // enemy sprites are always system #s 4-7
+	
+	*sprlo++ = *v++; // x
+	if(*v++ == 1) { ReHigh(ne); }
+	 else { UnHigh(ne); } // x-hi
+	*sprlo++ = *v++; // y
+	*sprpt++ = *v++; // sprite id
+	
+	v += sizeof(struct Enemy) - 4; // enemy B this frame
+	ne++; // sprite++
+	*sprlo++ = *v++; // x
+	if(*v++ == 1) { ReHigh(ne); }
+	 else { UnHigh(ne); } // x-hi
+	*sprlo = *v++; // y
+	*sprpt = *v;
+
+	//TODO sprite_id / e_type animation
+
+	SETBORDER(RED);
 }
 
-const u8 htxt[] = "HELLTH \xe7\xe7\xe7       ";
-const u8 gtxt[] = "GUNN \xe7  ";
+
+void UpdateEnemyState()
+{
+	u8 ne, nx;
+	u8 jj, jk;
+	u16 tgsq;
+	u8* sc;
+	struct Enemy* en;
+	SETBORDER(GREEN);
+	if(oddFrame) jj = 4;
+	else jj = 6;
+	jk = jj + 2;
+	for(; jj < jk; jj++)
+	{
+		ne = jj - 4;
+		en = (struct Enemy*)&enemies[ne];
+		en->timer--;
+		en->facingRight ? en->x += 2 : en->x -= 2;
+		tgsq = en->x >> 3;
+		tgsq += (((en->y >> 3)-3) * 40) - 1; //even enough
+		if(collisionmask[tgsq] != 1) {//acc for spr height 
+			if(en->facingRight)
+			{
+				en->facingRight = false;
+				//en->timer = -1;
+				en->sprite_id -= 2; // left comes two frames before
+			}
+			else {
+				en->facingRight = true;
+				//en->timer = -1;
+				en->sprite_id += 2;
+			}
+		}
+		if(en->timer < 0)
+		{
+			en->timer = 15;
+			switch(en->state)
+			{
+				nx = 0;
+				case patrolling:
+					en->sprite_id++;
+					nx = en->base_sprite + (2 * en->facingRight);
+					if(en->sprite_id >= (nx + 2)) \
+						en->sprite_id = nx;
+					break;
+			}
+		}
+		//if(en->x > 319) en->x = 319;
+	}
+	SETBORDER(RED);
+}
+
+void UpdateGUI()
+{	
+	u8 i;
+	u8* cl;
+	u8* hr;
+	//GUI
+	//cl = SCREENRAM + (40 * 24) +22;
+	hr = (u8*)COLORRAM + (40 * 24) +22;
+	if(p_Reloaded) *hr = 10;
+	else *hr = 0;
+	
+}
+
+static const u8 htxt[] = "HELLTH";
+static const u8 gtxt[] = "GUNZ";
 
 void main()
 {
 	u16 ii;
-	u8 i;
 	u8 pw;
-	u8* cl;
+
 	u16* clr;
 	u16 len;
 	u8 tcp;
 	u8 n;
 	s8 z;
-
+	
 	timer_a = 0;
 	timer_j = 2;
 	p_frame = 0;
@@ -248,7 +368,11 @@ void main()
 	SetSpritePosition(1, 90, 90);
 	SPRITECOLOR_1(RED);
 	
-	// WHITE and BLUE MC colors
+	// WHITE and BLUE MULTICOLOR SPRITE colors , rest green
+	SPRITECOLOR_4(LIGHTGREEN);
+	SPRITECOLOR_5(LIGHTGREEN);
+	SPRITECOLOR_6(LIGHTGREEN);
+	SPRITECOLOR_7(LIGHTGREEN);
 	asm("lda #1 \
 	sta $d025 \
 	lda #6 \
@@ -275,10 +399,9 @@ void main()
 	// set player to falling
 	playerState = jumping;
 	
-	print(&htxt[0], sizeof(htxt)-1, 0, 23, LIGHTGREEN); // "loading..."
-	print(&gtxt[0], sizeof(gtxt)-1, 18, 23, RED);
-	// enemy data from collision map:
-	//101 = enemy 1 (snake)
+	//print(&htxt[0], sizeof(htxt)-1, 0, 23, LIGHTGREEN); // "loading..."
+	//print(&gtxt[0], sizeof(gtxt)-1, 20, 23, RED);
+	
 	
 	while(1) 
 	{
@@ -291,12 +414,18 @@ void main()
 		frameFinished = false;
 		
 		  SETBORDER(WHITE);
-		
+		//////
+		if(oddFrame) oddFrame = false;
+		else oddFrame = true;
+
 		UpdatePlayerState();
 		GunMaintenance();
 		POLL_INPUT();
 		if(player_x > 319) player_x = 319;
-		
+		UpdateEnemyState();
+		UpdateGUI();
+
+		//////
 		  SETBORDER(BLACK);
 		
 	}

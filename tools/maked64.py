@@ -441,8 +441,9 @@ if mode == ADD_FILE:
     f = open(dn,'wb')
     b = 0
     while b < len(ds):
-        #if(ds[b] == -1): # if the byte conversion fails...?
-        #    ds[b] = 0
+        if(ds[b] == -1): # if the byte conversion fails...?
+            print("fail detected...")
+            ds[b] = 0
         f.write(bytes([ds[b]]))
         b += 1
     f.close()

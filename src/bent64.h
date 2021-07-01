@@ -269,8 +269,8 @@ void print(const u8* a, u8 len, u8 x, u8 y, u8 color)
 			c = a[i];
 			if(c >= 0xc0 && c <= 0xdf) c -= 0x80;
 			else if(c >= 0x40 && c <= 0x5f) c -= 0x40;
-			*scp++ = c;
-			*cpr++ = color;
+			*scp++ = (u8)c;
+			*cpr++ = (u8)color;
 		}
 	}
 }
@@ -339,8 +339,8 @@ void save2file(u8 nam[8],
 	asm("lda #<%v", globalSubC);
 	asm("sta $ae");
 	asm("lda #>%v", globalSubC);
-	asm("sta $af");
-	asm("ldy #0");
+	asm("sta $af \
+	ldy #0");
 	WRITELOOP:
 	asm("jsr %w", READST);
 	asm("bne %g", WERROR);
