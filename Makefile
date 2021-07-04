@@ -7,6 +7,8 @@ DISKNAME=app
 PROJECT=./
 INCLUDES=src
 RUN=$(EMU) $(DISKNAME).d64 > emulator_out.txt
+#EXOPATH=~/Projects/exomizer/src
+EXOPATH=~/Projects/c64/exomizer/src
 DATAFILE=.
 PY=python3
 FNO=0
@@ -24,7 +26,7 @@ main:
 		  -m build/main.map \
 		  -Ors \
 		  $(PROJECT)/main.c -o build/$(APPNAME)
-	~/Projects/exomizer/src/exomizer sfx sys -c -t 64 \
+	$(EXOPATH)/exomizer sfx sys -c -t 64 \
 		-o build/main.exo build/main  
 	$(PY) tools/maked64.py -f $(DISKNAME).d64 \
 		build/$(APPNAME).exo -t19 -s0

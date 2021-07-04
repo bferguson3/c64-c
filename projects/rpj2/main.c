@@ -1,7 +1,7 @@
 // main.c
 
-
 #include "bent64.h"
+
 #include "gfx.h"
 u16 ii;
 u8* dest;
@@ -9,11 +9,12 @@ u8* dest;
 void vblirq();
 void LoadSID(u8 n_tr, u8 n_sc);
 void LoadMap(u8 tr, u8 sec);
-void DrawEnemies();
 
 //
-const u8 teststr[] = "loading...";
+bool frameFinished = false; // for vsync
+static bool oddFrame;
 
+const u8 teststr[] = "loading...";
 
 // mappy stuff
 static u8 mapbuffer[2000]; // Dont forget to use this as general purpose RAM!
@@ -23,23 +24,8 @@ static u8 collisionmask[1000]; // 1500-1999 decompressed (0-15)
 #include "player.h"
 static s8 playerHealth = 3;
 
-
-bool frameFinished = false; // for vsync
-static bool oddFrame;
-
-enum enemyState { patrolling, aiming, firing, injured };
-// enemy stuff
-static struct Enemy {
-	u16 x;
-	u8 y;
-	u8 sprite_id;
-	u8 base_sprite;
-	u8 e_type;
-	s8 health;
-	s8 timer; // used for all animation cooldowns
-	bool facingRight;
-	enum enemyState state;
-} enemies[8];
+// Enemies!
+#include "enemies.h"
 
 void vblirq()
 {
@@ -118,7 +104,6 @@ void vblirq()
 	pla");
 	return_irq;
 }
-s8 enemycount;
 // Decompress collision mask to collisionmask[]
 /*# 4 = >
 # 1 = ^
@@ -193,116 +178,6 @@ void LoadMap(u8 tr, u8 sec)
 		}
 	}
 }
-#define ReHigh(s) globalSubA = (1 << (s));\
-	asm("lda $d010 \
-	ora %v", globalSubA);\
-	asm("sta $d010");
-#define UnHigh(s) globalSubA = ~(1 << (s));\
-	asm("lda $d010 \
-	and %v", globalSubA);\
-	asm("sta $d010");
-
-void DrawEnemies()
-{
-	u8 jj;
-	u8 ne;
-	u8* v;
-	u8* sprlo;
-	u8* sprpt;
-	/*
-	Enemy = {
-	u16 x;
-	u8 y;
-	u8 sprite_id;
-	u8 e_type;
-	s8 health;
-	s8 timer;
-	bool facingRight;
-	enum enemyState state;
-	*/
-	SETBORDER(BLUE);
-
-	sprlo = (u8*)0xd008;
-	sprpt = (u8*)0x7fc; // sprite 04
-	if(oddFrame) ne = 0;
-	else {
-		ne = 2;
-		sprlo += 4;
-		sprpt += 2;
-	}
-	v = (u8*)(&enemies[ne]);	// enemy A
-	ne += 4; // enemy sprites are always system #s 4-7
-	
-	*sprlo++ = *v++; // x
-	if(*v++ == 1) { ReHigh(ne); }
-	 else { UnHigh(ne); } // x-hi
-	*sprlo++ = *v++; // y
-	*sprpt++ = *v++; // sprite id
-	
-	v += sizeof(struct Enemy) - 4; // enemy B this frame
-	ne++; // sprite++
-	*sprlo++ = *v++; // x
-	if(*v++ == 1) { ReHigh(ne); }
-	 else { UnHigh(ne); } // x-hi
-	*sprlo = *v++; // y
-	*sprpt = *v;
-
-	//TODO sprite_id / e_type animation
-
-	SETBORDER(RED);
-}
-
-
-void UpdateEnemyState()
-{
-	u8 ne, nx;
-	u8 jj, jk;
-	u16 tgsq;
-	u8* sc;
-	struct Enemy* en;
-	SETBORDER(GREEN);
-	if(oddFrame) jj = 4;
-	else jj = 6;
-	jk = jj + 2;
-	for(; jj < jk; jj++)
-	{
-		ne = jj - 4;
-		en = (struct Enemy*)&enemies[ne];
-		en->timer--;
-		en->facingRight ? en->x += 2 : en->x -= 2;
-		tgsq = en->x >> 3;
-		tgsq += (((en->y >> 3)-3) * 40) - 1; //even enough
-		if(collisionmask[tgsq] != 1) {//acc for spr height 
-			if(en->facingRight)
-			{
-				en->facingRight = false;
-				//en->timer = -1;
-				en->sprite_id -= 2; // left comes two frames before
-			}
-			else {
-				en->facingRight = true;
-				//en->timer = -1;
-				en->sprite_id += 2;
-			}
-		}
-		if(en->timer < 0)
-		{
-			en->timer = 15;
-			switch(en->state)
-			{
-				nx = 0;
-				case patrolling:
-					en->sprite_id++;
-					nx = en->base_sprite + (2 * en->facingRight);
-					if(en->sprite_id >= (nx + 2)) \
-						en->sprite_id = nx;
-					break;
-			}
-		}
-		//if(en->x > 319) en->x = 319;
-	}
-	SETBORDER(RED);
-}
 
 void UpdateGUI()
 {	
@@ -350,11 +225,11 @@ void main()
 		mapbuffer[ii] = 0x0;
 	}
 
-	LoadSID(1, 0); // sid is at track 1, sector 0
+// mac loads the sid last
+	LoadSID(1, 2); // sid is at track 1, sector 2
 
-	// LOAD THAT MAP BOY
-	//for(n = 4; n < 8; n++) SetSpritePosition(n, 0, 0);
-	LoadMap(1, 2);
+	// on mac, map2 is track 1 sector 1
+	LoadMap(1, 1);
 
 	ENABLE_SPRITES(0b11111111);
 	n = 0;
@@ -398,10 +273,7 @@ void main()
 
 	// set player to falling
 	playerState = jumping;
-	
-	//print(&htxt[0], sizeof(htxt)-1, 0, 23, LIGHTGREEN); // "loading..."
-	//print(&gtxt[0], sizeof(gtxt)-1, 20, 23, RED);
-	
+		
 	
 	while(1) 
 	{
@@ -447,7 +319,7 @@ void LoadSID(u8 n_tr, u8 n_sc)
 	// First sector:
 	dl = (u8*)&disk_buffer[0];
 	dest = (u8*)0x1000;
-	LoadSectorFromDisk(1, 0, dl);
+	LoadSectorFromDisk(n_tr, n_sc, dl);
         n_tr = *dl++;
 	n_sc = *dl++;
 	dl = (dl + 0x7c + 2); // discard sector header and SID header

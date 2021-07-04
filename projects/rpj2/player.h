@@ -117,7 +117,8 @@ void UpdatePlayerState()
 		playerState = jumping;
 		timer_j = 0;
 	}
-	if(!(JOY2_STATE & JOYUP) && (jumpReleased == false))
+	if(!(JOY2_STATE & JOYUP) && (jumpReleased == false) && \
+		(playerState != falling) && (playerState != jumping))
 	{
 		jumpReleased = true;
 	}
@@ -284,7 +285,7 @@ void GunMaintenance()
 			else
 			{	// only change to reload animation and tick
 				// down waitToReload if we are standing still
-				if(!(JOY2_STATE & 0b00001111)\
+				if(!(JOY2_STATE & (JOYLEFT | JOYRIGHT))\
 				  && (playerState == standing)) 
 				{
 					reloadAnimPlaying = true;
