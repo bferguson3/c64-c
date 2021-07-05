@@ -95,46 +95,91 @@ void UpdateEnemyState()
 		ne = jj - 4;
 		en = (struct Enemy*)&enemies[ne];
 		en->timer--;
-        if(en->state == patrolling){
-            en->facingRight ? en->x += 2 : en->x -= 2;
-            tgsq = en->x >> 3;
-            tgsq += (((en->y >> 3)-3) * 40) - 1; //even enough
-            if(collisionmask[tgsq] != 1) {//acc for spr height 
-                if(en->facingRight)
-                {
-                    en->facingRight = false;
-                    //en->timer = -1;
-                    en->sprite_id -= 2; // left comes two frames before
-                }
-                else {
-                    en->facingRight = true;
-                    //en->timer = -1;
-                    en->sprite_id += 2;
-                }
-            }
-            else 
-            { // grounded, so can I aim?
-                //nx = player_y;
-                ny = player_y + 21;// nx is lowest edge y, ny is highest edge y. within these 2, try to shoot
-                if((en->y > player_y) && (en->y < ny))
-                {
-                    en->state = aiming;
-                    en->timer = 15;
-                    if(player_x > en->x)
-                    { // the player is to my right?
-
-                    }
-                    else
-                    { // the player is to the left.
-
-                    }
-                }
-            }
-        }
-        else if (en->state == aiming)
-        {
-
-        }
+		if(en->state == patrolling){
+			en->facingRight ? en->x += 2 : en->x -= 2;
+			tgsq = en->x >> 3;
+			tgsq += (((en->y >> 3)-3) * 40) - 1; //even enough
+			if(collisionmask[tgsq] != 1) {//acc for spr height 
+				if(en->facingRight)
+				{
+				en->facingRight = false;
+				//en->timer = -1;
+				en->sprite_id -= 2; // left comes two frames before
+				}
+				else {
+				en->facingRight = true;
+				//en->timer = -1;
+				en->sprite_id += 2;
+				}
+			}
+			else 
+			{ // patrolling, but grounded, so can I aim?
+				ny = player_y + 21;// nx is lowest edge y, ny is highest edge y. within these 2, try to shoot
+				if((en->y >= player_y) && (en->y <= ny))
+				{
+					en->state = aiming;
+					en->timer = 15;
+					if(player_x > en->x) // jj contains the sprite number 4-7
+					{ // the player is to my right?
+						en->facingRight = true;
+						en->sprite_id = en->base_sprite + 2;
+					}
+					else
+					{ // the player is to the left.
+						en->facingRight = false;
+						en->sprite_id = en->base_sprite;
+					}
+				}
+			}
+		}
+		else if (en->state == aiming)
+		{
+			if(en->timer == 0)
+			{
+				en->state = firing;
+				en->timer = 5;
+			}
+			else if( ((en->timer < 15) \
+			&& (en->timer >= 10))\
+			|| (en->timer < 5)){
+				switch(jj){
+					case(4):
+					SPRITECOLOR_4(RED);
+					break;
+					case(5):
+					SPRITECOLOR_5(RED);
+					break;
+					case(6):
+					SPRITECOLOR_6(RED);
+					break;
+					case(7):
+					SPRITECOLOR_7(RED);
+					break;
+				}
+			}else
+			{
+				switch(jj){
+					case(4):
+					SPRITECOLOR_4(LIGHTGREEN);
+					break;
+					case(5):
+					SPRITECOLOR_5(LIGHTGREEN);
+					break;
+					case(6):
+					SPRITECOLOR_6(LIGHTGREEN);
+					break;
+					case(7):
+					SPRITECOLOR_7(LIGHTGREEN);
+					break;
+				}
+			
+			} 
+		} else if (en->state == firing)
+		{
+			// display a gun flash sprite for 5 frames
+			//SPRITEC
+			SetSpritePosition(2, en->x, en->y);
+		}
 		if(en->timer < 0)
 		{
 			en->timer = 15;
@@ -146,6 +191,24 @@ void UpdateEnemyState()
 					nx = en->base_sprite + (2 * en->facingRight);
 					if(en->sprite_id >= (nx + 2)) \
 						en->sprite_id = nx;
+					break;
+				case firing:
+					SetSpritePosition(2, 0, 0);
+					en->state = patrolling;
+					switch(jj){
+						case(4):
+						SPRITECOLOR_4(LIGHTGREEN);
+						break;
+						case(5):
+						SPRITECOLOR_5(LIGHTGREEN);
+						break;
+						case(6):
+						SPRITECOLOR_6(LIGHTGREEN);
+						break;
+						case(7):
+						SPRITECOLOR_7(LIGHTGREEN);
+						break;
+					}
 					break;
 			}
 		}

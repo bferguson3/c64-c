@@ -226,10 +226,10 @@ void main()
 	}
 
 // mac loads the sid last
-	LoadSID(1, 2); // sid is at track 1, sector 2
+	LoadSID(1, 0); // sid is at track 1, sector 2
 
 	// on mac, map2 is track 1 sector 1
-	LoadMap(1, 1);
+	LoadMap(1, 2);
 
 	ENABLE_SPRITES(0b11111111);
 	n = 0;
@@ -242,6 +242,7 @@ void main()
 	SetSpritePointer(1, 138);
 	SetSpritePosition(1, 90, 90);
 	SPRITECOLOR_1(RED);
+	SPRITECOLOR_2(WHITE);
 	
 	// WHITE and BLUE MULTICOLOR SPRITE colors , rest green
 	SPRITECOLOR_4(LIGHTGREEN);

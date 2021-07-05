@@ -148,7 +148,12 @@ static u8 globalSubE;
 			asm("sta $d02d");
 #define SPRITECOLOR_7(n) asm("lda #%b", (u8)n); \
 			asm("sta $d02e");
-			
+
+//#define SPRITECOLOR(n,z) globalSubA = (u16)(0xd027 + (u8)(z));\
+//			asm("lda #%b", (u8)(n));\
+//			asm("sta %v", globalSubA);
+
+
 static u8 JOY1_STATE = 0;
 static u8 JOY2_STATE = 0;
 #define POLL_INPUT() asm("lda $dc00 \
