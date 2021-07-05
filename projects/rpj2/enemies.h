@@ -179,6 +179,8 @@ void UpdateEnemyState()
 			// display a gun flash sprite for 5 frames
 			//SPRITEC
 			SetSpritePosition(2, en->x, en->y);
+			if(!en->facingRight) SetSpritePointer(2, 148);
+			else SetSpritePointer(2, 149);
 		}
 		if(en->timer < 0)
 		{
