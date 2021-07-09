@@ -12,17 +12,29 @@ void LoadMap(u8 tr, u8 sec);
 
 //
 bool frameFinished = false; // for vsync
+bool musicPlaying = false;
 static bool oddFrame;
 
-const u8 teststr[] = "loading...";
+const u8 teststr[] = "press JOYSTICK 2 BUTTON to load...";
+const u8 tstr2[] = "loading...";
 
 // mappy stuff
 static u8 mapbuffer[2000]; // Dont forget to use this as general purpose RAM!
 static u8 collisionmask[1000]; // 1500-1999 decompressed (0-15)
+enum gamestate { PLAYING, TITLE, LOADING };
+enum gamestate GameState;
+
+struct Bullet {
+	u8 facing; 
+	u16 start_x;
+	u8 start_y;
+} bullets[5];
+void MakeBullet(u8 facing, u16 x, u8 y);
+void ProcessBullets();
 
 // Player!
 #include "player.h"
-static s8 playerHealth = 3;
+static s8 playerHealth = 10;
 
 // Enemies!
 #include "enemies.h"
@@ -41,57 +53,61 @@ void vblirq()
 
 	// Play music!
 #define C_MUSIC_PLAY 0x1003
-        asm("jsr %w", C_MUSIC_PLAY);
+        if(musicPlaying) asm("jsr %w", C_MUSIC_PLAY);
 
 	  SETBORDER(RED);
 
-	// Set player sprites 0 and 1 position
-	if(playerState == jumping) player_y -= p_jump_pos[timer_j];
-	SetSpritePosition(0, (u16)(player_x + spa_o), \
-		(u8)(player_y));
-	SetSpritePosition(1, player_x + spa_o, \
-		player_y);
-#define PLAYER_BASE 128
-	// Set the animation frame
-	if((playerState != jumping) && (playerState != falling) \
-	&& (playerState != reloading))
+	if(GameState == PLAYING)
 	{
-		SetSpritePointer(0, PLAYER_BASE + p_anm_frames[p_frame] + f_o);
-		SetSpritePointer(1, PLAYER_BASE + 10 + p_anm_frames[p_frame] + f_o);
-	}
-	else if(playerState == reloading)
-	{
-		if(playerFacing == left)
+		// Set player sprites 0 and 1 position
+		if(playerState == jumping) player_y -= p_jump_pos[timer_j];
+		SetSpritePosition(0, (u16)(player_x + spa_o), \
+			(u8)(player_y));
+		SetSpritePosition(1, player_x + spa_o, \
+			player_y);
+	#define PLAYER_BASE 128
+		// Set the animation frame
+		if((playerState != jumping) && (playerState != falling) \
+		&& (playerState != reloading))
 		{
-			j_ofs = 1;
+			SetSpritePointer(0, PLAYER_BASE + p_anm_frames[p_frame] + f_o);
+			SetSpritePointer(1, PLAYER_BASE + 10 + p_anm_frames[p_frame] + f_o);
 		}
-		SetSpritePointer(1, 22 + PLAYER_BASE + j_ofs);
-		SetSpritePointer(0, 24 + PLAYER_BASE + j_ofs);
-	}
-	else 
-	{ 
-		SetSpritePointer(0, PLAYER_BASE + 4 + f_o);
-		SetSpritePointer(1, PLAYER_BASE + 10 + 4 + f_o);
-	}
-	// Gun muzzle flash
-	if(justFired) {
-		gunFlashCtr++;
-		if(gunFlashCtr == 1)
+		else if(playerState == reloading)
 		{
-			ENABLE_SPRITES(0b11111011);
+			if(playerFacing == left)
+			{
+				j_ofs = 1;
+			}
+			SetSpritePointer(1, 22 + PLAYER_BASE + j_ofs);
+			SetSpritePointer(0, 24 + PLAYER_BASE + j_ofs);
 		}
-		else if(gunFlashCtr == 2)
-		{
-			ENABLE_SPRITES(0b11111111);
+		else 
+		{ 
+			SetSpritePointer(0, PLAYER_BASE + 4 + f_o);
+			SetSpritePointer(1, PLAYER_BASE + 10 + 4 + f_o);
 		}
-		else if(gunFlashCtr > 2)
-		{
-			gunFlashCtr = 0;
-			justFired = false;
-			SetSpritePosition(2, 0, 0);
+		// Gun muzzle flash
+		if(justFired) {
+			gunFlashCtr++;
+			if(gunFlashCtr == 1)
+			{
+				ENABLE_SPRITES(0b11111011);
+			}
+			else if(gunFlashCtr == 2)
+			{
+				ENABLE_SPRITES(0b11111111);
+			}
+			else if(gunFlashCtr > 2)
+			{
+				gunFlashCtr = 0;
+				justFired = false;
+				SetSpritePosition(2, 0, 0);
+			}
 		}
+		DrawEnemies();
+		
 	}
-	DrawEnemies();
 	
 	  SETBORDER(BLACK);
 	frameFinished = true;
@@ -104,6 +120,23 @@ void vblirq()
 	pla");
 	return_irq;
 }
+
+void vbl_title()
+{
+	asm("pha \
+	txa \
+	pha \
+	tya \
+	pha");
+	//
+	asm("pla \
+	tay \
+	pla \
+	tax \
+	pla");
+	return_irq;
+}
+
 // Decompress collision mask to collisionmask[]
 /*# 4 = >
 # 1 = ^
@@ -190,10 +223,45 @@ void UpdateGUI()
 	if(p_Reloaded) *hr = 10;
 	else *hr = 0;
 	
+	hr = (u8*)COLORRAM + (40 * 24) + 7;
+	for(i = 0; i < playerHealth; i++) *hr++ = 10;
+	for(; i < 10; i++) *hr++ = 0;
 }
 
 static const u8 htxt[] = "HELLTH";
 static const u8 gtxt[] = "GUNZ";
+
+void LoadGame()
+{
+//mac loads the sid last
+	LoadSID(1, 16); 
+	// map3:
+	LoadMap(1, 0);
+
+	ENABLE_SPRITES(0b11111111);
+	//n = 0;
+	
+	SET_MCSPRITES(0b11110000);
+	//Hero:
+	SetSpritePointer(0, 128);
+	SetSpritePosition(0, 90, 90);
+	SPRITECOLOR_0(WHITE);
+	SetSpritePointer(1, 138);
+	SetSpritePosition(1, 90, 90);
+	SPRITECOLOR_1(RED);
+	SPRITECOLOR_2(WHITE);
+	
+	//WHITE and BLUE MULTICOLOR SPRITE colors , rest green
+	SPRITECOLOR_4(LIGHTGREEN);
+	SPRITECOLOR_5(LIGHTGREEN);
+	SPRITECOLOR_6(LIGHTGREEN);
+	SPRITECOLOR_7(LIGHTGREEN);
+	asm("lda #1 \
+	sta $d025 \
+	lda #6 \
+	sta $d026 ");
+
+}
 
 void main()
 {
@@ -212,7 +280,8 @@ void main()
 	p_speed = 3;
 	playerFacing = right;
 	//playerState = standing;
-	
+	GameState = TITLE;
+
 	k_CLS();
 	SETBACKGROUND(BLACK);
 	SETBORDER(BLACK);
@@ -225,35 +294,7 @@ void main()
 		mapbuffer[ii] = 0x0;
 	}
 
-// mac loads the sid last
-	LoadSID(1, 0); // sid is at track 1, sector 2
-
-	// on mac, map2 is track 1 sector 1
-	LoadMap(1, 2);
-
-	ENABLE_SPRITES(0b11111111);
-	n = 0;
 	
-	SET_MCSPRITES(0b11110000);
-	// Hero:
-	SetSpritePointer(0, 128);
-	SetSpritePosition(0, 90, 90);
-	SPRITECOLOR_0(WHITE);
-	SetSpritePointer(1, 138);
-	SetSpritePosition(1, 90, 90);
-	SPRITECOLOR_1(RED);
-	SPRITECOLOR_2(WHITE);
-	
-	// WHITE and BLUE MULTICOLOR SPRITE colors , rest green
-	SPRITECOLOR_4(LIGHTGREEN);
-	SPRITECOLOR_5(LIGHTGREEN);
-	SPRITECOLOR_6(LIGHTGREEN);
-	SPRITECOLOR_7(LIGHTGREEN);
-	asm("lda #1 \
-	sta $d025 \
-	lda #6 \
-	sta $d026 ");
-
 	// Set: Only 'safe' kb keys as readable, support joy 1 + 2.
 	// JOY1 <-> KB (either or)
 	// JOY2 (doesn't matter)
@@ -263,18 +304,28 @@ void main()
 	sta $dc03 ");
 	
 	// enable vblank
-	setup_irq(&vblirq, 226);
+	setup_irq(&vbl_title, 226);
+	// TITLE LOOP
+	while(!(JOY2_STATE & JOYBTN))
+	{
+		POLL_INPUT();
+	}
+	k_CLS();
+	print(&tstr2, sizeof(tstr2)-1, 0, 0, LIGHTGREY); // "loading..."
 
+	LoadGame();
+	setup_irq(&vblirq, 226);
+	//
+	GameState = PLAYING;
 	// Start music
 #define C_MUSIC_INIT 0x1000
-        asm("lda #0 \
-        ldx #0 \
-        ldy #0 \
-        jsr %w", C_MUSIC_INIT);
-
+        //asm("lda #0 \
+        //ldx #0 \
+        //ldy #0 \
+        //jsr %w", C_MUSIC_INIT);
+	musicPlaying = true;
 	// set player to falling
 	playerState = jumping;
-		
 	
 	while(1) 
 	{
@@ -291,12 +342,17 @@ void main()
 		if(oddFrame) oddFrame = false;
 		else oddFrame = true;
 
-		UpdatePlayerState();
-		GunMaintenance();
 		POLL_INPUT();
-		if(player_x > 319) player_x = 319;
-		UpdateEnemyState();
-		UpdateGUI();
+			
+		if(GameState == PLAYING)
+		{
+			UpdatePlayerState();
+			GunMaintenance();
+			if(player_x > 319) player_x = 319;
+			UpdateEnemyState();
+			ProcessBullets();
+			UpdateGUI();
+		}
 
 		//////
 		  SETBORDER(BLACK);
@@ -346,6 +402,53 @@ void LoadSID(u8 n_tr, u8 n_sc)
 
 }
 
+void MakeBullet(u8 facing, u16 x, u8 y)
+{	// LEFT IS 0, RIGHT IS 1
+	u8 s;
+	s = 0;
+	while(bullets[s].start_y != 0) s++;
+	bullets[s].facing = facing;
+	bullets[s].start_x = x;
+	bullets[s].start_y = y;
+}
+
+void ProcessBullets()
+{
+	u8 s;
+	s8 xd;
+	u8 yd;
+	for(s = 0; s < 5; s++) 
+	{
+		if(bullets[s].start_y != 0){
+			xd = (s8)(bullets[s].start_x >> 3);
+			yd = bullets[s].start_y >> 3;
+			if(bullets[s].facing == 0) // shooting <----
+			{
+				while((xd > 0) && (collisionmask[(yd*40)+xd] == 0))
+				{
+					xd--;
+				}
+				if(xd < 0) xd = 0;
+				if( (u16)(xd << 3) > player_x ) {
+					; 
+				}	
+				else {
+					playerHealth--;
+					//UpdateGUI();
+				} 
+			}
+			bullets[s].start_y = 0;
+		}
+		//bullets[s].start_x = 0;
+	}
+	// the simple way:
+	// downshift 3 (/8), 
+	// subtract 1 sq at a time and see when collisionmask == wall.
+	// if new value upshift 3 and facing is on the other side of the player,
+	//  destroy the bullet
+	// else hurt the player!
+	// and do the same for player bullets. (all bulets hurt everyone :))
+}
 ///////////////////////////////////////////
 
 // RLE code that doesn't work for some reason

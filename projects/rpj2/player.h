@@ -3,6 +3,7 @@ void UpdatePlayerState();
 bool CheckSpriteBottomCollision(u8 spr_no);
 
 enum pstate { standing, starting, running, jumping, falling, reloading };
+
 enum pstate playerState;
 enum pfacing { left, right };
 enum pfacing playerFacing;
@@ -91,8 +92,8 @@ void UpdatePlayerState()
 		else playerState = running;	
 	}
 	else if((JOY2_STATE & JOYLEFT) \
-		&& (playerState != jumping)\
-		&& (playerState != falling))
+	&& (playerState != jumping)\
+	&& (playerState != falling))
 	{
 		if(playerFacing == right)
 		{
@@ -144,14 +145,19 @@ void UpdatePlayerState()
 	{
 		if((playerState == falling) || (playerState == jumping)) 
 		{
-			if(!CheckPlayerWallCollision(true)) player_x += p_speed; 
+			if(!CheckPlayerWallCollision(true)) {
+				player_x += p_speed; 
+				playerFacing = right;
+			}
 		}
 		else {
 			if(!CheckSpriteBottomCollision(0)) playerState = falling;
 			else 
 			{
-				if(!CheckPlayerWallCollision(true)) \
+				if(!CheckPlayerWallCollision(true)) {
 					player_x += p_speed;
+					playerFacing = right;
+				}
 			}
 		}
 	}
@@ -159,14 +165,19 @@ void UpdatePlayerState()
 	{
 		if((playerState == falling) || (playerState == jumping)) 
 		{
-			if(!CheckPlayerWallCollision(false)) player_x -= p_speed; 
+			if(!CheckPlayerWallCollision(false)) {
+				player_x -= p_speed; 
+				playerFacing = left;
+			}
 		}
 		else {
 			if(!CheckSpriteBottomCollision(0)) playerState = falling;
 			else 
 			{
-				if(!CheckPlayerWallCollision(false)) \
+				if(!CheckPlayerWallCollision(false)) {
+					playerFacing = left;
 					player_x -= p_speed;
+				}
 			}
 		}
 	}
@@ -207,11 +218,17 @@ _reloading:
 }
 
 #define FLOOR_COLLISION 1
-
+// Decompress collision mask to collisionmask[]
+/*# 4 = >
+# 1 = ^
+# 2 = <
+# 3 = v
+# 0 = ' '*/
 bool CheckSpriteBottomCollision(u8 spr_no)
 {
 	u8 y;
 	u16 x;
+	u8 ic;
 	u8* dr;
 	x = *(u8*)(0xd000 + (spr_no*2));
 	y = *(u8*)(0xd001 + (spr_no*2)) - 21; // sprites are 24x21 px
@@ -221,23 +238,28 @@ bool CheckSpriteBottomCollision(u8 spr_no)
 		x += 256;
 	x = ((x-8) >> 3) - 1;
 	// sprite facing: am I the player? (FIXME)
+	if(playerFacing == right) x -= 1;
+	//if(spr_no > 3) x += 1;
 	y = (y >> 3) - 1;
-	if(collisionmask[(y*40)+x] == FLOOR_COLLISION) {
+	ic = collisionmask[(y*40)+x];
+	if((ic == FLOOR_COLLISION) || (ic == 2)|| (ic == 4)) {
 		// am I the player?
 		player_y = ((y + 1)*8) + 21;
 		return 1;
 	}
 	x++;
-	if(collisionmask[(y*40)+x] == FLOOR_COLLISION) {
+	ic = collisionmask[(y*40)+x];
+	if((ic == FLOOR_COLLISION) || (ic == 2)|| (ic == 4)) {
 		player_y = ((y + 1)*8) + 21;
 		return 1;
 	}
 	else {
-		if(playerState != falling) // FIRST FRAME FALLING?
-		{
+		//if(playerState != falling) // FIRST FRAME FALLING?
+		//{
 			//so adjust my pos
-			player_x = (x + 2)*8;
-		}
+			//if((playerFacing == right) && (spr_no < 2)) x += 1;
+		//	player_x = (x + 1)*8;
+		//}
 		return 0;
 	}
 }
@@ -249,12 +271,13 @@ void FireGun()
 	if(playerFacing == right){
 		SetSpritePointer(2, 148);
 		SetSpritePosition(2, player_x+21, player_y+3);
+		MakeBullet(1, player_x+21, player_y+3);
 	}
 	else {
 		SetSpritePointer(2, 149);
 		SetSpritePosition(2, player_x-29, player_y+3);
+		MakeBullet(0, player_x-29, player_y+3);
 	}
-	SPRITECOLOR_2(WHITE);
 	// and toggle the gun states
 	justFired = true;
 	p_Reloaded = false;

@@ -61,7 +61,7 @@ if(sys.argv[1] == '-f'):
         fn = sys.argv[3]
         dn = sys.argv[2]
         i = 4
-        interleave = 10 # interleave*256 bytes are skipped every 254* bytes when
+        interleave = 1 # interleave*256 bytes are skipped every 254* bytes when
         # writing files to the image (*+2 track/sector bytes)
         startsec = -1
         starttrac = 0

@@ -84,6 +84,7 @@ void UpdateEnemyState()
 	u8 ne, nx, ny;
 	u8 jj, jk;
 	u16 tgsq;
+	s16 deltax;
 	u8* sc;
 	struct Enemy* en;
 	SETBORDER(GREEN);
@@ -96,6 +97,7 @@ void UpdateEnemyState()
 		en = (struct Enemy*)&enemies[ne];
 		en->timer--;
 		if(en->state == patrolling){
+			//
 			en->facingRight ? en->x += 2 : en->x -= 2;
 			tgsq = en->x >> 3;
 			tgsq += (((en->y >> 3)-3) * 40) - 1; //even enough
@@ -117,6 +119,21 @@ void UpdateEnemyState()
 				ny = player_y + 21;// nx is lowest edge y, ny is highest edge y. within these 2, try to shoot
 				if((en->y >= player_y) && (en->y <= ny))
 				{
+					// quick test to see if we're within 1/2 a screen
+					deltax = player_x - en->x;
+					if(en->facingRight){
+						if(deltax > 0){
+							if(deltax > 160) goto _nothx;
+						}
+						else goto _nothx;
+					}
+					else {
+						if(deltax < 0){
+							if(deltax < -160) goto _nothx;
+						}
+						else goto _nothx;
+					}
+
 					en->state = aiming;
 					en->timer = 15;
 					if(player_x > en->x) // jj contains the sprite number 4-7
@@ -177,11 +194,20 @@ void UpdateEnemyState()
 		} else if (en->state == firing)
 		{
 			// display a gun flash sprite for 5 frames
-			//SPRITEC
-			SetSpritePosition(2, en->x, en->y);
-			if(!en->facingRight) SetSpritePointer(2, 148);
-			else SetSpritePointer(2, 149);
+			if(!en->facingRight) { //left?
+				SetSpritePointer(2, 149);
+				SetSpritePosition(2, en->x-21, en->y+6);
+				if(en->timer == 0) MakeBullet(0, en->x-21, en->y+6);
+			}
+			else {
+				SetSpritePointer(2, 148);
+				SetSpritePosition(2, en->x+17, en->y+6);
+				if(en->timer == 0) MakeBullet(1, en->x+17, en->y+6);
+			}
+			// no bullet collision so we can finish on time :(
+			
 		}
+		_nothx:
 		if(en->timer < 0)
 		{
 			en->timer = 15;
